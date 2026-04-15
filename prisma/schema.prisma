@@ -1,0 +1,418 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String            @id @default(cuid())
+  username          String
+  email             String            @unique
+  password          String
+  avatarUrl         String?
+  publicId          String?
+  role              Role              @default(USER)
+  isOnline          Boolean           @default(false)
+  lastSeen          DateTime?         @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  name              String?
+  status            User_status       @default(AVAILABLE)
+  phone             String?
+  gender            String?
+  birthDate         String?
+  busyDuration      Int?
+  busyStartTime     DateTime?
+  deletedAt         DateTime?
+  deletedBy         String?
+  isActive          Boolean           @default(true)
+  isDND             Boolean           @default(false)
+  officeEndTime     String?           @default("18:00")
+  officeStartTime   String?           @default("09:00")
+  department        String?
+  designation       String?
+  parentId          String?
+  blockedBy         BlockedUser[]     @relation("Blocked")
+  blocking          BlockedUser[]     @relation("Blocker")
+  callsMade         Call[]            @relation("Caller")
+  callsReceived     Call[]            @relation("Receiver")
+  memberships       ChatMember[]
+  FcmToken          FcmToken[]
+  Meeting           Meeting[]
+  MeetingReminder   MeetingReminder[]
+  forwardedMessages Message[]         @relation("ForwardedFrom")
+  pinnedMessages    Message[]         @relation("PinnedMessages")
+  messages          Message[]
+  messageStatuses   MessageStatus[]
+  reactions         Reaction[]
+  typingIndicators  TypingIndicator[]
+  parent            User?             @relation("UserHierarchy", fields: [parentId], references: [id])
+  children          User[]            @relation("UserHierarchy")
+  contactMessages   ContactMessage[]
+  starredMessages   StarredMessage[]  @relation("UserStarredMessages")
+  meetings          Meeting[]         @relation("MeetingParticipants")
+
+  @@index([parentId])
+  @@index([designation])
+}
+
+model BlockedUser {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId], map: "BlockedUser_blockedId_fkey")
+}
+
+model ChatRoom {
+  id               String            @id @default(cuid())
+  name             String?
+  description      String?
+  isGroup          Boolean           @default(false)
+  roomType         RoomType          @default(DIRECT)
+  avatarUrl        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  publicId         String?
+  members          ChatMember[]
+  Meeting          Meeting[]
+  messages         Message[]
+  typingIndicators TypingIndicator[]
+  meetings         Meeting[]         @relation("MeetingGroup")
+}
+
+model ChatMember {
+  id         String     @id @default(cuid())
+  userId     String
+  roomId     String
+  role       MemberRole @default(MEMBER)
+  joinedAt   DateTime   @default(now())
+  lastReadAt DateTime?
+  mutedUntil DateTime?
+  isPinned   Boolean    @default(false)
+  isFavorite Boolean    @default(false)
+  isActive   Boolean    @default(true)
+  room       ChatRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@index([roomId], map: "ChatMember_roomId_fkey")
+}
+
+model Message {
+  id              String             @id @default(uuid())
+  roomId          String
+  senderId        String
+  type            Message_type       @default(TEXT)
+  content         String             @db.Text
+  mediaUrl        String?
+  fileName        String?
+  fileSize        Int?
+  replyToId       String?
+  edited          Boolean            @default(false)
+  deleted         Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  publicId        String?
+  meetingId       String?
+  duration        Int?
+  fileType        String?
+  mimeType        String?
+  callRefId       String?
+  callStatus      String?
+  callType        String?
+  deletedAt       DateTime?
+  forwardedFromId String?
+  isForwarded     Boolean            @default(false)
+  isPinned        Boolean            @default(false)
+  mediaFiles      Json?
+  pinnedAt        DateTime?
+  pinnedById      String?
+  pinnedExpiresAt DateTime?
+  thumbnailUrl    String?
+  forwardedFrom   User?              @relation("ForwardedFrom", fields: [forwardedFromId], references: [id])
+  meeting         Meeting?           @relation("MeetingToMessage", fields: [meetingId], references: [id])
+  pinnedBy        User?              @relation("PinnedMessages", fields: [pinnedById], references: [id])
+  repliedTo       Message?           @relation("MessageReply", fields: [replyToId], references: [id])
+  replies         Message[]          @relation("MessageReply")
+  room            ChatRoom           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender          User               @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  hiddenFor       MessageHiddenFor[]
+  statuses        MessageStatus[]
+  reactions       Reaction[]
+  starredBy       StarredMessage[]   @relation("MessageStarredBy")
+
+  @@index([forwardedFromId])
+  @@index([replyToId], map: "Message_replyToId_fkey")
+  @@index([roomId], map: "Message_roomId_fkey")
+  @@index([senderId], map: "Message_senderId_fkey")
+  @@index([meetingId], map: "Message_meetingId_fkey")
+  @@index([pinnedById])
+}
+
+model MessageHiddenFor {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model MessageStatus {
+  id          String         @id @default(cuid())
+  messageId   String
+  userId      String
+  status      DeliveryStatus @default(SENT)
+  deliveredAt DateTime?
+  readAt      DateTime?
+  message     Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId], map: "MessageStatus_userId_fkey")
+}
+
+model TypingIndicator {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  isTyping  Boolean
+  updatedAt DateTime @updatedAt
+  room      ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId], map: "TypingIndicator_userId_fkey")
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([userId], map: "Reaction_userId_fkey")
+}
+
+model Meeting {
+  id              String            @id @default(cuid())
+  title           String
+  agenda          String?
+  date            DateTime
+  time            DateTime?
+  createdBy       String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  reminder        String?
+  recurring       String?
+  inviteLink      String?
+  attachfile      String?
+  chatRoomId      String?
+  creatorId       String?
+  groupId         String?
+  reminderSent    Boolean           @default(false)
+  reminderTime    DateTime?
+  ChatRoom        ChatRoom?         @relation(fields: [chatRoomId], references: [id])
+  creator         User              @relation(fields: [createdBy], references: [id])
+  MeetingReminder MeetingReminder[]
+  messages        Message[]         @relation("MeetingToMessage")
+  groups          ChatRoom[]        @relation("MeetingGroup")
+  participants    User[]            @relation("MeetingParticipants")
+
+  @@index([chatRoomId], map: "Meeting_chatRoomId_fkey")
+  @@index([createdBy], map: "Meeting_createdBy_fkey")
+}
+
+model MeetingReminder {
+  id        String   @id @default(cuid())
+  meetingId String
+  userId    String
+  sentAt    DateTime @default(now())
+  status    String   @default("SENT")
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([userId], map: "MeetingReminder_userId_fkey")
+}
+
+model OTP {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("OTP")
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  feedback  String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("feedback")
+}
+
+model Call {
+  id                String     @id @default(cuid())
+  callId            String     @unique
+  callerId          String
+  receiverId        String
+  roomName          String
+  callType          CallType   @default(NORMAL)
+  status            CallStatus @default(INITIATED)
+  startedAt         DateTime?
+  endedAt           DateTime?
+  duration          Int?
+  recordingUrl      String?
+  recordingPublicId String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  callerUid         BigInt?
+  receiverUid       BigInt?
+  caller            User       @relation("Caller", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver          User       @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([callerId])
+  @@index([receiverId])
+  @@index([status])
+}
+
+model FcmToken {
+  id       String   @id @default(cuid())
+  token    String   @unique
+  platform String?
+  userId   String
+  addedAt  DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "FcmToken_userId_fkey")
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  status    String   @default("PENDING")
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "contact_messages_userId_fkey")
+  @@map("contact_messages")
+}
+
+model StarredMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+  message   Message  @relation("MessageStarredBy", fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation("UserStarredMessages", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([userId])
+  @@index([messageId])
+  @@map("starred_messages")
+}
+
+enum CallType {
+  NORMAL
+  VIDEO
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING
+  ACCEPTED
+  REJECTED
+  MISSED
+  ENDED
+  BUSY
+}
+
+enum MemberRole {
+  MEMBER
+  ADMIN
+  OWNER
+}
+
+enum DeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum RoomType {
+  DIRECT
+  GROUP
+  CHANNEL
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+  MODERATOR
+  CLIENT
+}
+
+enum User_status {
+  AVAILABLE
+  BUSY
+  DND
+  DELETED
+}
+
+enum Message_type {
+  TEXT
+  IMAGE
+  VIDEO
+  FILE
+  AUDIO
+  SYSTEM
+  MEETING_INVITATION
+  MEETING_REMINDER
+  IMAGE_GROUP
+  CALL_LOG
+}
+model SignupRequest {
+  id          String              @id @default(cuid())
+  name        String
+  email       String              @unique
+  mobile      String
+  companyName String
+  status      SignupRequestStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("signup_requests")
+}
+
+enum SignupRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}

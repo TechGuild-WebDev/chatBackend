@@ -1,0 +1,12 @@
+node_modules
+.env
+prisma/generated/
+uploads/
+public/temp/
+.DS_Store
+*.log
+*.p8
+*.json
+!package.json
+!package-lock.json
+!composer.json

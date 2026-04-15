@@ -1,0 +1,41 @@
+{
+  "name": "chat-app",
+  "version": "1.0.0",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "@react-native-firebase/app": "^23.5.0",
+    "agora-access-token": "^2.0.4",
+    "apn": "^2.2.0",
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.7.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "express-session": "^1.18.2",
+    "firebase-admin": "^13.5.0",
+    "google-auth-library": "^10.3.0",
+    "googleapis": "^159.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.6",
+    "passport": "^0.7.0",
+    "socket.io": "^4.8.1",
+    "uuid": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.4.0",
+    "nodemon": "^3.1.10",
+    "prisma": "^6.0.0"
+  }
+}
