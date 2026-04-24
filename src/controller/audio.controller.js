@@ -12,11 +12,12 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
   if (!roomId) throw new ApiError(400, "Room ID is required");
   if (!req.file) throw new ApiError(400, "Audio file is required");
 
-  // Validate audio file (double check after middleware)
-  const audioMimeTypes = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/x-m4a', 'application/octet-stream'];
-  if (!audioMimeTypes.includes(req.file.mimetype)) {
-    // Clean up if invalid type passed middleware somehow
-    try { fs.unlinkSync(req.file.path); } catch (e) { }
+  // Accept any audio/* or common browser-recorded types (webm, ogg, mp3, m4a, etc.)
+  const isAudio =
+    req.file.mimetype.startsWith("audio/") ||
+    req.file.mimetype === "application/octet-stream" ||
+    req.file.mimetype === "video/webm"; // Chrome records audio as video/webm
+  if (!isAudio) {
     throw new ApiError(400, "Invalid audio file format");
   }
 
@@ -30,13 +31,13 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Upload audio to Cloudinary
+    // Upload audio — tries Cloudinary first, falls back to local storage automatically
     const uploadedFile = await uploadOnCloudinary(req.file.path, "chat/audio", {
-      resource_type: "video" // Cloudinary handles audio as video sometimes for better format support
+      resource_type: "video" // Cloudinary handles audio as video for better format support
     });
 
-    if (!uploadedFile) {
-      throw new ApiError(500, "Failed to upload audio to Cloudinary");
+    if (!uploadedFile?.secure_url) {
+      throw new ApiError(500, "Failed to upload audio. Please try again.");
     }
 
     // Generate proper filename
@@ -52,9 +53,10 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
         mediaUrl: uploadedFile.secure_url,
         publicId: uploadedFile.public_id,
         fileName: fileName,
-        fileSize: uploadedFile.bytes,
+        fileSize: uploadedFile.bytes || req.file.size || 0,
         replyToId: replyTo || null,
-        content: duration ? duration.toString() : "0", // Store duration as content
+        content: duration ? duration.toString() : "0", // Keep for backwards compat
+        duration: duration ? parseInt(duration) : 0, // Store in real duration field
         msgId: tempId, // Store tempId if schema supports it, otherwise generic field
         statuses: {
           create: [{ userId: senderId, status: "READ", readAt: new Date() }]

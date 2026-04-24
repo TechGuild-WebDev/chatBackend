@@ -107,13 +107,14 @@ export const sendFile = asyncHandler(async (req, res) => {
 
     // Handle file upload (empty or non-empty)
     if (file.size > 0) {
-      console.log(`☁️ Uploading ${file.mimetype} to Cloudinary...`);
+      console.log(`☁️ Uploading ${file.mimetype}...`);
+      // uploadOnCloudinary automatically falls back to local disk if Cloudinary is unreachable
       uploadResult = await uploadOnCloudinary(file.path, "ChatFiles");
       if (uploadResult?.secure_url) {
         mediaUrl = uploadResult.secure_url;
         publicId = uploadResult.public_id;
       } else {
-        return res.status(500).json({ ok: false, error: "Cloudinary upload failed" });
+        return res.status(500).json({ ok: false, error: "Upload failed. Please try again." });
       }
     } else {
       console.log("📝 Empty file detected - handling properly");
@@ -244,8 +245,10 @@ export const sendFile = asyncHandler(async (req, res) => {
 
 
     // FIXED: Complete message structure for socket broadcast
+    // tempId MUST be included so the frontend can replace the optimistic message
     const out = {
       id: created.id,
+      tempId: tempId || null,       // ← KEY FIX: lets onNewMessage find & replace the optimistic entry
       roomId,
       url: created.mediaUrl,
       mediaUrl: created.mediaUrl,

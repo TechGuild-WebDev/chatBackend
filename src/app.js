@@ -12,6 +12,8 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 import session from "express-session";
 import passport from "passport";
 import { Server } from "socket.io";
@@ -19,6 +21,9 @@ import prisma from "./prisma.js";
 import jwt from "jsonwebtoken";
 import { cloudinary } from "./utils/cloudinary.js";
 import errorHandler from "./middlewares/errorHandler.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 import admin from 'firebase-admin';
 // Routers
@@ -138,6 +143,20 @@ app.use(
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Serve uploaded files (avatars, etc.)
+// Explicit route is more reliable than express.static across different start directories.
+app.get("/uploads/*", (req, res) => {
+  const relativePath = req.params[0];
+  const absolutePath = path.join(__dirname, "../public/uploads", relativePath);
+  console.log(`📁 Serving file: ${absolutePath}`);
+  res.sendFile(absolutePath, (err) => {
+    if (err && !res.headersSent) {
+      console.error(`❌ File not found: ${absolutePath}`);
+      res.status(404).json({ message: "File not found", path: absolutePath });
+    }
+  });
+});
 
 // -------------------- Socket.IO --------------------
 reminderService.initializeScheduledReminders();
@@ -330,12 +349,7 @@ io.on("connection", (socket) => {
       console.error("Error updating user status on connection:", error);
     });
 
-  // Room management
-  socket.on("join-room", (roomId) => {
-    socket.join(roomId);
-    console.log(`User ${userId} joined room: ${roomId}`);
-  });
-
+  // Room management (see verified join-room handler below)
   socket.on("leave-room", (roomId) => {
     socket.leave(roomId);
     console.log(`User ${userId} left room: ${roomId}`);
@@ -1297,13 +1311,6 @@ app.get('/api/v1/fcm/my-tokens', authenticate, async (req, res) => {
 
 // -------------------- End of FCM Handlers --------------------
 
-app.use("/api", (req, res) => {
-  res.status(404).json({
-    status: 404,
-    message: `Not found: ${req.method} ${req.originalUrl}`,
-  });
-});
-
 app.post('/api/test-fcm', async (req, res) => {
   try {
     const { token } = req.body;
@@ -1330,6 +1337,14 @@ app.post('/api/test-fcm', async (req, res) => {
       error: error.errorInfo
     });
   }
+});
+
+// 404 catch-all — must be AFTER all specific routes
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    status: 404,
+    message: `Not found: ${req.method} ${req.originalUrl}`,
+  });
 });
 
 app.use(errorHandler);

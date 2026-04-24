@@ -68,10 +68,12 @@ export const registerUser = asyncHandler(async (req, res) => {
 
   let profileUrl = null;
   let publicId = null;
-  if (req.file) {
-    const uploadedImage = await uploadOnCloudinary(req.file.path, "users");
-    profileUrl = uploadedImage?.secure_url || "";
-    publicId = uploadedImage?.public_id;
+  // Accept either `profileImage` or `avatar` field name from the client
+  const uploadedFile = req.file || req.files?.profileImage?.[0] || req.files?.avatar?.[0];
+  if (uploadedFile?.path) {
+    const uploadedImage = await uploadOnCloudinary(uploadedFile.path, "users");
+    profileUrl = uploadedImage?.secure_url || null;
+    publicId = uploadedImage?.public_id || null;
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -83,7 +85,7 @@ export const registerUser = asyncHandler(async (req, res) => {
       username: username,
       name: name,
       phone: phone,
-      // avatarUrl: avatarUrl,
+      avatarUrl: profileUrl, // FIX: actually persist the uploaded avatar URL
       publicId: publicId,
     },
     select: {
@@ -172,27 +174,29 @@ export const updateUser = asyncHandler(async (req, res) => {
     officeEndTime
   } = req.body;
 
-  // Update the validation to include new fields
-  if (!username && !phone && !gender && !password && !status && !birthDate && !officeStartTime && !officeEndTime)
+  // Detect uploaded file first so it counts as a valid "field to update"
+  const uploadedFile =
+    req.file ||
+    req.files?.profileImage?.[0] ||
+    req.files?.avatar?.[0] ||
+    (Array.isArray(req.files) ? req.files[0] : null);
+
+  const hasFile = Boolean(uploadedFile?.path);
+
+  // Require at least one field OR a file
+  if (!username && !phone && !gender && !password && !status && !birthDate && !officeStartTime && !officeEndTime && !hasFile)
     throw new ApiError(400, "No fields provided to update.");
 
   const updateData = {};
 
   if (username) {
     const existingUser = await prisma.user.findFirst({
-      where: {
-        username: username,
-        id: { not: userId }
-      }
+      where: { username, id: { not: userId } }
     });
-
-    if (existingUser) {
-      throw new ApiError(409, "Username already taken");
-    }
+    if (existingUser) throw new ApiError(409, "Username already taken");
     updateData.username = username;
   }
 
-  // Add the new fields to updateData
   if (phone) updateData.phone = phone;
   if (gender) updateData.gender = gender;
   if (status) updateData.status = status;
@@ -204,21 +208,105 @@ export const updateUser = asyncHandler(async (req, res) => {
     updateData.password = hashedPassword;
   }
 
-  const existedUser = await prisma.user.findUnique({ where: { id: userId } });
+  // ── Avatar upload ─────────────────────────────────────────────────────────
+  if (hasFile) {
+    const existedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatarUrl: true, publicId: true },
+    });
 
-  let profileUrl = existedUser?.avatarUrl;
-  let publicId = existedUser?.publicId;
+    // Clean up previous asset (best-effort)
+    if (existedUser?.publicId) {
+      await deleteOnCloudinary(existedUser.publicId).catch((e) =>
+        console.warn("Old avatar cleanup failed:", e?.message)
+      );
+    }
 
-  if (req.file) {
-    if (existedUser?.publicId) await deleteOnCloudinary(existedUser.publicId);
-    const uploadedImage = await uploadOnCloudinary(req.file.path, "users");
-    profileUrl = uploadedImage?.secure_url || "";
-    publicId = uploadedImage?.public_id;
+    let uploadedImage = await uploadOnCloudinary(uploadedFile.path, "users");
+
+    // Last-resort fallback: save directly to public/uploads/users/ inside the controller
+    if (!uploadedImage?.secure_url) {
+      try {
+        const fs   = await import("fs");
+        const path = await import("path");
+        const { fileURLToPath } = await import("url");
+        const __dirname = path.default.dirname(fileURLToPath(import.meta.url));
+        const destDir   = path.default.join(__dirname, "../../public/uploads/users");
+        await fs.default.promises.mkdir(destDir, { recursive: true });
+
+        const ext      = path.default.extname(uploadedFile.originalname || uploadedFile.path) || ".jpg";
+        const fileName = `avatar_${userId}_${Date.now()}${ext}`;
+        const destPath = path.default.join(destDir, fileName);
+
+        // file may have already been moved — try copy, then rename as fallback
+        try {
+          await fs.default.promises.copyFile(uploadedFile.path, destPath);
+        } catch {
+          await fs.default.promises.rename(uploadedFile.path, destPath);
+        }
+
+        console.log("💾 Controller fallback — saved avatar locally:", fileName);
+        uploadedImage = {
+          secure_url: `/uploads/users/${fileName}`,
+          public_id:  `local/users/${fileName}`,
+        };
+      } catch (fallbackErr) {
+        console.error("❌ All upload methods failed:", fallbackErr?.message);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to save profile image. Please try again.",
+        });
+      }
+    }
+
+    updateData.avatarUrl = uploadedImage.secure_url;
+    updateData.publicId  = uploadedImage.public_id;
   }
 
   const updatedUser = await prisma.user.update({
     where: { id: userId },
-    data: { ...updateData, avatarUrl: profileUrl, publicId },
+    data: updateData,
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      status: true,
+      phone: true,
+      gender: true,
+      birthDate: true,
+      avatarUrl: true,
+      busyStartTime: true,
+      busyDuration: true,
+      isDND: true,
+      officeStartTime: true,
+      officeEndTime: true,
+    },
+  });
+
+  // Broadcast the updated profile to EVERY connected client so that all users
+  // (not just the one who made the change) see the new data in real time.
+  const io = req.app.get("io");
+  const socketPayload = {
+    userId: updatedUser.id,
+    username: updatedUser.username,
+    email: updatedUser.email,
+    status: updatedUser.status,
+    phone: updatedUser.phone,
+    gender: updatedUser.gender,
+    birthDate: updatedUser.birthDate,
+    avatarUrl: updatedUser.avatarUrl,
+    busyStartTime: updatedUser.busyStartTime,
+    busyDuration: updatedUser.busyDuration,
+    isDND: updatedUser.isDND,
+  };
+
+  io?.emit("user-profile-updated", socketPayload);
+  io?.emit("user-status-changed", {
+    userId: updatedUser.id,
+    status: updatedUser.status,
+    busyStartTime: updatedUser.busyStartTime,
+    busyDuration: updatedUser.busyDuration,
+    isDND: updatedUser.isDND,
   });
 
   res
@@ -243,19 +331,15 @@ export const updateProfile = asyncHandler(async (req, res) => {
     officeEndTime
   } = req.body;
 
-  // FIX: Proper status mapping
-  let statusEnum = 'AVAILABLE'; // default
-  let displayStatus = status; // keep original for display
-
-  if (status) {
+  // FIX: Only map status when the client actually sent one. Previously we
+  // defaulted to 'AVAILABLE' and always wrote it, which meant a user who only
+  // uploaded an avatar would have their DND/BUSY status silently reset.
+  let statusEnum = null;
+  if (typeof status === "string" && status.trim() !== "") {
     const statusLower = status.toLowerCase();
-    if (statusLower.includes('busy')) {
-      statusEnum = 'BUSY';
-    } else if (statusLower.includes('dnd') || statusLower.includes('do not disturb')) {
-      statusEnum = 'DND';
-    } else if (statusLower.includes('available')) {
-      statusEnum = 'AVAILABLE';
-    }
+    if (statusLower.includes("busy")) statusEnum = "BUSY";
+    else if (statusLower.includes("dnd") || statusLower.includes("do not disturb")) statusEnum = "DND";
+    else if (statusLower.includes("available")) statusEnum = "AVAILABLE";
   }
 
   const data = {};
@@ -264,14 +348,34 @@ export const updateProfile = asyncHandler(async (req, res) => {
   if (statusEnum) data.status = statusEnum;
   if (typeof phone !== "undefined") data.phone = phone;
   if (typeof gender !== "undefined") data.gender = gender;
-  if (typeof birthDate !== "undefined") data.birthDate = birthDate;
+  if (typeof birthDate !== "undefined") data.birthDate = birthDate || null;
+  if (typeof officeStartTime !== "undefined") data.officeStartTime = officeStartTime;
+  if (typeof officeEndTime !== "undefined") data.officeEndTime = officeEndTime;
 
-  // FIX: Handle file upload properly
-  if (req.file?.path) {
+  // FIX: Handle file upload properly and accept either `avatar` or `profileImage`
+  // field name so the frontend can't silently drop the file due to a naming mismatch.
+  const uploadedFile =
+    req.file ||
+    req.files?.avatar?.[0] ||
+    req.files?.profileImage?.[0] ||
+    (Array.isArray(req.files) ? req.files[0] : null);
+
+  if (uploadedFile?.path) {
     try {
-      const uploadRes = await cloudinary.uploader.upload(req.file.path, {
+      // Clean up the previous Cloudinary asset so we don't leak storage
+      const existing = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { publicId: true },
+      });
+      if (existing?.publicId) {
+        cloudinary.uploader.destroy(existing.publicId).catch((e) =>
+          console.warn("Old avatar cleanup failed:", e?.message)
+        );
+      }
+
+      const uploadRes = await cloudinary.uploader.upload(uploadedFile.path, {
         folder: "avatars",
-        public_id: `user_${userId}_${Date.now()}`, // Add timestamp to avoid cache
+        public_id: `user_${userId}_${Date.now()}`,
         overwrite: true,
         transformation: [
           { width: 512, height: 512, crop: "fill", gravity: "auto" },
@@ -283,7 +387,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
       console.error("Cloudinary upload error:", uploadError);
       return res.status(500).json({
         success: false,
-        message: "Failed to upload image"
+        message: "Failed to upload profile image",
       });
     }
   }
@@ -308,6 +412,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
     data.isDND = true;
   }
 
+  // Only force-clear busy fields if the client explicitly set status=AVAILABLE
   if (statusEnum === 'AVAILABLE') {
     data.busyStartTime = null;
     data.busyDuration = null;
@@ -812,9 +917,12 @@ export const getUserById = asyncHandler(async (req, res) => {
     select: {
       id: true,
       username: true,
+      name: true,
       isOnline: true,
       email: true,
       phone: true,
+      gender: true,
+      birthDate: true,
       role: true,
       createdAt: true,
       avatarUrl: true,

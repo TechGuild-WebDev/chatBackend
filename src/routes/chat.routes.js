@@ -1,7 +1,7 @@
 // src/routes/chat.routes.js
 import { Router } from "express";
-import multer from "multer";
 import { authenticate } from "../middlewares/auth.middleware.js";
+import { upload } from "../middlewares/multer.middleware.js";
 
 import {
   sendMessage,
@@ -21,13 +21,6 @@ import { getMyGroups } from "../controller/group.controller.js";
 import { createOrGetChatRoom } from "../controller/room.controller.js";
 
 const router = Router();
-
-// Multer (local disk) for chat file upload
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
-});
-const upload = multer({ storage });
 
 // all chat routes secured
 router.use(authenticate);

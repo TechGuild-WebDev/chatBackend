@@ -35,7 +35,11 @@ import { upload } from "../middlewares/multer.middleware.js";
 const router = Router();
 
 // Public
-router.post("/register", upload.single("profileImage"), registerUser);
+router.post(
+  "/register",
+  upload.fields([{ name: "profileImage", maxCount: 1 }, { name: "avatar", maxCount: 1 }]),
+  registerUser
+);
 router.post("/login", loginUser);
 router.post("/logout", logoutUser);
 router.post("/google", googleLogin);
@@ -54,9 +58,22 @@ router.get("/all-users", authenticate, getUsers);
 router.get("/birthdays/today", authenticate, getTodayBirthdays);
 router.get("/user/:userId", authenticate, getUserById);
 router.get("/user/:userId/groups", authenticate, getUserGroups);
-router.put("/update", authenticate, upload.single("profileImage"), updateUser);
+// Accept either `profileImage` or `avatar` field name so the client can't
+// silently drop the file via a naming mismatch. Both endpoints normalize
+// the uploaded file inside the controller.
+router.put(
+  "/update",
+  authenticate,
+  upload.fields([{ name: "profileImage", maxCount: 1 }, { name: "avatar", maxCount: 1 }]),
+  updateUser
+);
 router.delete("/me/avatar", authenticate, deleteProfileImage);
-router.put("/me", authenticate, upload.single("avatar"), updateProfile);
+router.put(
+  "/me",
+  authenticate,
+  upload.fields([{ name: "avatar", maxCount: 1 }, { name: "profileImage", maxCount: 1 }]),
+  updateProfile
+);
 router.patch("/me/basics", authenticate, patchMeBasics);
 router.delete("/delete-account", authenticate, deleteAccount);
 

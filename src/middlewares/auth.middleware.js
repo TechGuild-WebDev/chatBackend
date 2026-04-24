@@ -62,10 +62,17 @@ export const authenticate = asyncHandler(async (req, _res, next) => {
         publicId: true,
         status: true,
         phone: true,
+        gender: true,
+        birthDate: true,
+        isDND: true,
+        busyStartTime: true,
+        busyDuration: true,
+        isOnline: true,
+        lastSeen: true,
         createdAt: true,
         updatedAt: true,
         officeStartTime: true,
-        officeEndTime: true
+        officeEndTime: true,
       },
     });
 
