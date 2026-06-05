@@ -22,13 +22,14 @@ export const adminLogin = asyncHandler(async (req, res) => {
   const user = await prisma.user.findFirst({
     where: {
       email: email,
-      role: {
-        in: ["ADMIN", "SUPER_ADMIN", "USER"]
-      }
     },
   });
 
   if (!user) throw new ApiError(404, "Admin account not found");
+
+  if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+    throw new ApiError(403, "You are not allowed for the access");
+  }
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) throw new ApiError(401, "Incorrect Password");
@@ -38,12 +39,13 @@ export const adminLogin = asyncHandler(async (req, res) => {
     {
       id: user.id,
       role: user.role,
-      isAdmin: true
+      isAdmin: true,
     },
-    process.env.ADMIN_ACCESS_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET + "_ADMIN", // Different secret
+    process.env.ADMIN_ACCESS_TOKEN_SECRET ||
+      process.env.ACCESS_TOKEN_SECRET + "_ADMIN", // Different secret
     {
       expiresIn: process.env.ADMIN_ACCESS_TOKEN_EXPIRY || "24h", // Different expiry
-    }
+    },
   );
 
   const { password: _, ...loggedInUser } = user;
@@ -62,8 +64,8 @@ export const adminLogin = asyncHandler(async (req, res) => {
       new ApiResponse(
         200,
         { user: loggedInUser, accessToken: adminToken },
-        "Admin logged in successfully"
-      )
+        "Admin logged in successfully",
+      ),
     );
 });
 
@@ -105,18 +107,18 @@ export const getUsers = asyncHandler(async (req, res) => {
       gender: true,
       birthDate: true,
       officeStartTime: true,
-      officeEndTime: true
+      officeEndTime: true,
       // isActive: true,
     },
   });
 
   // Add real-time status calculation
-  const usersWithRealTimeStatus = users.map(user => {
+  const usersWithRealTimeStatus = users.map((user) => {
     let realTimeStatus = user.status;
     let busyUntil = null;
     let remainingMinutes = 0;
 
-    if (user.status === 'BUSY' && user.busyStartTime && user.busyDuration) {
+    if (user.status === "BUSY" && user.busyStartTime && user.busyDuration) {
       const startTime = new Date(user.busyStartTime);
       busyUntil = new Date(startTime.getTime() + user.busyDuration * 60 * 1000);
       const now = new Date();
@@ -124,7 +126,7 @@ export const getUsers = asyncHandler(async (req, res) => {
       remainingMinutes = Math.max(0, Math.ceil(timeDiff / (1000 * 60)));
 
       if (timeDiff <= 0) {
-        realTimeStatus = 'AVAILABLE';
+        realTimeStatus = "AVAILABLE";
       } else {
         realTimeStatus = `Busy (${remainingMinutes} min)`;
       }
@@ -135,12 +137,20 @@ export const getUsers = asyncHandler(async (req, res) => {
       realTimeStatus,
       busyUntil,
       remainingMinutes,
-      isBusy: user.status === 'BUSY',
-      isAvailable: realTimeStatus === 'AVAILABLE'
+      isBusy: user.status === "BUSY",
+      isAvailable: realTimeStatus === "AVAILABLE",
     };
   });
 
-  res.status(200).json(new ApiResponse(200, usersWithRealTimeStatus, "Users retrieved successfully"));
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        usersWithRealTimeStatus,
+        "Users retrieved successfully",
+      ),
+    );
 });
 
 export const getUserById = asyncHandler(async (req, res) => {
@@ -167,13 +177,12 @@ export const getUserById = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, user, "User retrieved successfully"));
 });
 
-
 export const deleteUser = asyncHandler(async (req, res) => {
   const { userId } = req.params;
 
   try {
     const user = await prisma.user.findUnique({
-      where: { id: userId }
+      where: { id: userId },
     });
 
     if (!user) {
@@ -181,7 +190,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
     }
 
     // Check if already soft deleted
-    if (user.status === 'DELETED' || !user.isActive) {
+    if (user.status === "DELETED" || !user.isActive) {
       throw new ApiError(400, "User is already deleted");
     }
 
@@ -199,14 +208,17 @@ export const deleteUser = asyncHandler(async (req, res) => {
       },
     });
 
-
-    res.status(200).json(new ApiResponse(200,
-      { deletedUserId: deletedUser.id },
-      "User soft deleted successfully"
-    ));
-
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { deletedUserId: deletedUser.id },
+          "User soft deleted successfully",
+        ),
+      );
   } catch (error) {
-    console.error('Error in soft delete:', error);
+    console.error("Error in soft delete:", error);
     throw error;
   }
 });
@@ -217,7 +229,7 @@ export const restoreUser = asyncHandler(async (req, res) => {
 
   try {
     const user = await prisma.user.findUnique({
-      where: { id: userId }
+      where: { id: userId },
     });
 
     if (!user) {
@@ -228,25 +240,27 @@ export const restoreUser = asyncHandler(async (req, res) => {
     const restoredUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        status: 'AVAILABLE',     // ← Change from 'DELETED' to 'AVAILABLE'
-        isActive: true,          // ← Set back to true (active)
-        deletedAt: null,         // ← Clear the deletion timestamp
-        deletedBy: null,         // ← Clear who deleted it
-        isOnline: false,         // ← Set to offline (optional)
-      }
+        status: "AVAILABLE", // ← Change from 'DELETED' to 'AVAILABLE'
+        isActive: true, // ← Set back to true (active)
+        deletedAt: null, // ← Clear the deletion timestamp
+        deletedBy: null, // ← Clear who deleted it
+        isOnline: false, // ← Set to offline (optional)
+      },
     });
 
-    res.status(200).json(new ApiResponse(200,
-      {
-        restoredUserId: restoredUser.id,
-        status: restoredUser.status,
-        isActive: restoredUser.isActive
-      },
-      "User restored successfully"
-    ));
-
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          restoredUserId: restoredUser.id,
+          status: restoredUser.status,
+          isActive: restoredUser.isActive,
+        },
+        "User restored successfully",
+      ),
+    );
   } catch (error) {
-    console.error('Error restoring user:', error);
+    console.error("Error restoring user:", error);
     throw error;
   }
 });
@@ -273,11 +287,11 @@ export const getAllUsersForAdmin = asyncHandler(async (req, res) => {
         lastSeen: true,
         department: true, // ADD this line
         designation: true,
-        parentId: true    // ADD this line
+        parentId: true, // ADD this line
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: "desc",
+      },
     });
 
     console.log(`Found ${users.length} users in database`);
@@ -285,33 +299,40 @@ export const getAllUsersForAdmin = asyncHandler(async (req, res) => {
     res.status(200).json({
       success: true,
       data: users,
-      message: `Found ${users.length} users`
+      message: `Found ${users.length} users`,
     });
-
   } catch (error) {
-    console.error('💥 Error fetching users:', error);
+    console.error("💥 Error fetching users:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch users",
-      error: error.message
+      error: error.message,
     });
   }
 });
 
 export const createUserByAdmin = asyncHandler(async (req, res) => {
   const {
-    name, email, password, phone, username, role, gender, department, designation
+    name,
+    email,
+    password,
+    phone,
+    username,
+    role,
+    gender,
+    department,
+    designation,
   } = req.body; // ADD department
 
   // Validation - same as registerUser
   if ([name, email, password, phone, username].some((f) => f?.trim() === "")) {
     throw new ApiError(400, "All fields are required");
   }
-  
+
   const existedUser = await prisma.user.findFirst({
     where: {
-      email  // Only check email, not username
-    }
+      email, // Only check email, not username
+    },
   });
 
   if (existedUser) {
@@ -340,7 +361,7 @@ export const createUserByAdmin = asyncHandler(async (req, res) => {
       publicId: publicId,
       role: role || "USER",
       gender: gender,
-      department: department,// ADD this line
+      department: department, // ADD this line
       designation: designation || null,
       officeStartTime: req.body.officeStartTime || "09:00",
       officeEndTime: req.body.officeEndTime || "18:00",
@@ -380,21 +401,19 @@ export const updateUserByAdmin = asyncHandler(async (req, res) => {
     role,
     department,
     designation,
-    officeStartTime,  // Now accepts ISO string or Date object
-    officeEndTime,    // Now accepts ISO string or Date object
-    // timeZone  
+    officeStartTime, // Now accepts ISO string or Date object
+    officeEndTime, // Now accepts ISO string or Date object
+    // timeZone
   } = req.body;
 
   // Check if user exists
   const existingUser = await prisma.user.findUnique({
-    where: { id: userId }
+    where: { id: userId },
   });
 
   if (!existingUser) {
     throw new ApiError(404, "User not found");
   }
-
-
 
   const updateData = {};
   if (name) updateData.name = name;
@@ -408,7 +427,8 @@ export const updateUserByAdmin = asyncHandler(async (req, res) => {
   // if (timeZone) updateData.timeZone = timeZone;
 
   // Simple DateTime handling - no validation needed!
-  if (officeStartTime !== undefined) updateData.officeStartTime = officeStartTime;
+  if (officeStartTime !== undefined)
+    updateData.officeStartTime = officeStartTime;
   if (officeEndTime !== undefined) updateData.officeEndTime = officeEndTime;
 
   if (password) {
@@ -443,15 +463,19 @@ export const updateUserByAdmin = asyncHandler(async (req, res) => {
       gender: true,
       department: true,
       designation: true, // ADD this line
-      officeStartTime: true,  // Now returns DateTime
-      officeEndTime: true,    // Now returns DateTime
+      officeStartTime: true, // Now returns DateTime
+      officeEndTime: true, // Now returns DateTime
       // timeZone: true,
       createdAt: true,
-      updatedAt: true
-    }
+      updatedAt: true,
+    },
   });
 
-  res.status(200).json(new ApiResponse(200, updatedUser, "User updated successfully by admin"));
+  res
+    .status(200)
+    .json(
+      new ApiResponse(200, updatedUser, "User updated successfully by admin"),
+    );
 });
 
 // Get all messages sent by a specific user (for admin view)
@@ -465,7 +489,13 @@ export const getUserMessages = asyncHandler(async (req, res) => {
     // Verify the target user exists
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, name: true, email: true, avatarUrl: true }
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+      },
     });
 
     if (!targetUser) {
@@ -479,7 +509,7 @@ export const getUserMessages = asyncHandler(async (req, res) => {
       prisma.message.findMany({
         where: {
           senderId: userId,
-          type: type // Filter by message type
+          type: type, // Filter by message type
         },
         include: {
           sender: {
@@ -487,16 +517,16 @@ export const getUserMessages = asyncHandler(async (req, res) => {
               id: true,
               username: true,
               name: true,
-              avatarUrl: true
-            }
+              avatarUrl: true,
+            },
           },
           room: {
             select: {
               id: true,
               name: true,
               isGroup: true,
-              avatarUrl: true
-            }
+              avatarUrl: true,
+            },
           },
           repliedTo: {
             include: {
@@ -505,67 +535,76 @@ export const getUserMessages = asyncHandler(async (req, res) => {
                   id: true,
                   username: true,
                   name: true,
-                  avatarUrl: true
-                }
-              }
-            }
-          }
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         skip: skip,
-        take: parseInt(limit)
+        take: parseInt(limit),
       }),
       prisma.message.count({
         where: {
           senderId: userId,
-          type: type
-        }
-      })
+          type: type,
+        },
+      }),
     ]);
 
     console.log(`Found ${messages.length} messages for user ${userId}`);
 
     // Format the response
-    const formattedMessages = messages.map(message => ({
+    const formattedMessages = messages.map((message) => ({
       id: message.id,
       content: message.content,
       type: message.type,
       createdAt: message.createdAt,
       room: {
         id: message.room.id,
-        name: message.room.name || (message.room.isGroup ? 'Group Chat' : 'Direct Message'),
+        name:
+          message.room.name ||
+          (message.room.isGroup ? "Group Chat" : "Direct Message"),
         isGroup: message.room.isGroup,
-        avatarUrl: message.room.avatarUrl
+        avatarUrl: message.room.avatarUrl,
       },
       sender: {
         id: message.sender.id,
         username: message.sender.username,
         name: message.sender.name,
-        avatarUrl: message.sender.avatarUrl
+        avatarUrl: message.sender.avatarUrl,
       },
-      repliedTo: message.repliedTo ? {
-        id: message.repliedTo.id,
-        content: message.repliedTo.content,
-        sender: {
-          id: message.repliedTo.sender.id,
-          username: message.repliedTo.sender.username,
-          name: message.repliedTo.sender.name
-        }
-      } : null
+      repliedTo: message.repliedTo
+        ? {
+            id: message.repliedTo.id,
+            content: message.repliedTo.content,
+            sender: {
+              id: message.repliedTo.sender.id,
+              username: message.repliedTo.sender.username,
+              name: message.repliedTo.sender.name,
+            },
+          }
+        : null,
     }));
 
-    return res.status(200).json(new ApiResponse(200, {
-      messages: formattedMessages,
-      user: targetUser,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalCount / limit),
-        totalCount: totalCount,
-        hasNext: (page * limit) < totalCount,
-        hasPrevious: page > 1
-      }
-    }, "User messages retrieved successfully"));
-
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          messages: formattedMessages,
+          user: targetUser,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalCount / limit),
+            totalCount: totalCount,
+            hasNext: page * limit < totalCount,
+            hasPrevious: page > 1,
+          },
+        },
+        "User messages retrieved successfully",
+      ),
+    );
   } catch (error) {
     console.error("Get user messages error:", error);
     throw new ApiError(500, "Failed to retrieve user messages");
@@ -577,12 +616,20 @@ export const getUserGroups = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, search } = req.query;
 
   try {
-    console.log(`👥 Fetching groups for user: ${userId}, page: ${page}, search: ${search}`);
+    console.log(
+      `👥 Fetching groups for user: ${userId}, page: ${page}, search: ${search}`,
+    );
 
     // Follows YOUR pattern: Verify user exists but don't check permissions
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, name: true, email: true, avatarUrl: true }
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+      },
     });
 
     if (!targetUser) {
@@ -594,14 +641,14 @@ export const getUserGroups = asyncHandler(async (req, res) => {
     // Build where clause (follows your search pattern)
     const where = {
       userId: userId,
-      room: { isGroup: true }
+      room: { isGroup: true },
     };
 
     // Add search if provided (like your media/files APIs)
-    if (search && search.trim() !== '') {
+    if (search && search.trim() !== "") {
       where.room = {
         ...where.room,
-        name: { contains: search, mode: 'insensitive' }
+        name: { contains: search, mode: "insensitive" },
       };
     }
 
@@ -643,9 +690,9 @@ export const getUserGroups = asyncHandler(async (req, res) => {
         },
         orderBy: { room: { updatedAt: "desc" } },
         skip: skip,
-        take: parseInt(limit)
+        take: parseInt(limit),
       }),
-      prisma.chatMember.count({ where })
+      prisma.chatMember.count({ where }),
     ]);
 
     console.log(`Found ${groupMemberships.length} groups for user ${userId}`);
@@ -669,30 +716,34 @@ export const getUserGroups = asyncHandler(async (req, res) => {
           where: {
             message: {
               roomId: room.id,
-              type: { not: "SYSTEM" }
+              type: { not: "SYSTEM" },
             },
-            userId: userId,  // Use the target user ID
+            userId: userId, // Use the target user ID
             status: { not: "READ" },
           },
         });
 
         const formattedLastMessage = lastMessage
           ? {
-            id: lastMessage.id,
-            content: lastMessage.content,
-            type: lastMessage.type || "text",
-            sender: lastMessage.sender
-              ? {
-                id: lastMessage.sender.id,
-                username: lastMessage.sender.username || lastMessage.sender.name || "Unknown",
-                avatarUrl: lastMessage.sender.avatarUrl || null,
-              }
-              : null,
-            createdAt: lastMessage.createdAt,
-          }
+              id: lastMessage.id,
+              content: lastMessage.content,
+              type: lastMessage.type || "text",
+              sender: lastMessage.sender
+                ? {
+                    id: lastMessage.sender.id,
+                    username:
+                      lastMessage.sender.username ||
+                      lastMessage.sender.name ||
+                      "Unknown",
+                    avatarUrl: lastMessage.sender.avatarUrl || null,
+                  }
+                : null,
+              createdAt: lastMessage.createdAt,
+            }
           : null;
 
-        const lastMessageTime = lastMessage?.createdAt || room.updatedAt || room.createdAt;
+        const lastMessageTime =
+          lastMessage?.createdAt || room.updatedAt || room.createdAt;
 
         return {
           id: room.id,
@@ -706,7 +757,7 @@ export const getUserGroups = asyncHandler(async (req, res) => {
           createdAt: room.createdAt,
           updatedAt: room.updatedAt,
         };
-      })
+      }),
     );
 
     // Sort: pinned first, then by last activity
@@ -717,43 +768,55 @@ export const getUserGroups = asyncHandler(async (req, res) => {
     });
 
     // Follows YOUR exact response format
-    return res.status(200).json(new ApiResponse(200, {
-      groups: formattedGroups,
-      user: targetUser,  // Include user info like your other APIs
-      statistics: {
-        total: formattedGroups.length,
-        totalGroups: totalCount,
-        withUnread: formattedGroups.filter(g => g.unreadCount > 0).length,
-        pinned: formattedGroups.filter(g => g.isPinned).length
-      },
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalCount / limit),
-        totalCount: totalCount,
-        hasNext: (page * limit) < totalCount,
-        hasPrevious: page > 1,
-        limit: parseInt(limit)
-      }
-    }, "User groups retrieved successfully"));
-
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          groups: formattedGroups,
+          user: targetUser, // Include user info like your other APIs
+          statistics: {
+            total: formattedGroups.length,
+            totalGroups: totalCount,
+            withUnread: formattedGroups.filter((g) => g.unreadCount > 0).length,
+            pinned: formattedGroups.filter((g) => g.isPinned).length,
+          },
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalCount / limit),
+            totalCount: totalCount,
+            hasNext: page * limit < totalCount,
+            hasPrevious: page > 1,
+            limit: parseInt(limit),
+          },
+        },
+        "User groups retrieved successfully",
+      ),
+    );
   } catch (error) {
     console.error("Get user groups error:", error);
     throw new ApiError(500, "Failed to retrieve user groups");
   }
 });
 
-
 export const getUserMedia = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const { page = 1, limit = 20, type, search } = req.query;
 
   try {
-    console.log(`📨 Fetching media for user: ${userId}, type: ${type}, search: ${search}`);
+    console.log(
+      `📨 Fetching media for user: ${userId}, type: ${type}, search: ${search}`,
+    );
 
     // Verify the target user exists
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, name: true, email: true, avatarUrl: true }
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+      },
     });
 
     if (!targetUser) {
@@ -763,23 +826,23 @@ export const getUserMedia = asyncHandler(async (req, res) => {
     const skip = (page - 1) * parseInt(limit);
 
     // FIXED: ADD "AUDIO" TO MEDIA TYPES
-    const mediaTypes = type && type !== 'all' ? [type.toUpperCase()] : ["IMAGE", "VIDEO", "AUDIO"];
+    const mediaTypes =
+      type && type !== "all"
+        ? [type.toUpperCase()]
+        : ["IMAGE", "VIDEO", "AUDIO"];
 
     // Build where clause
     const where = {
       senderId: userId,
       type: { in: mediaTypes },
-      OR: [
-        { mediaUrl: { not: null } },
-        { fileName: { not: null } }
-      ]
+      OR: [{ mediaUrl: { not: null } }, { fileName: { not: null } }],
     };
 
     // Add search functionality if provided
-    if (search && search.trim() !== '') {
+    if (search && search.trim() !== "") {
       where.OR.push(
-        { fileName: { contains: search, mode: 'insensitive' } },
-        { content: { contains: search, mode: 'insensitive' } }
+        { fileName: { contains: search, mode: "insensitive" } },
+        { content: { contains: search, mode: "insensitive" } },
       );
     }
 
@@ -793,75 +856,95 @@ export const getUserMedia = asyncHandler(async (req, res) => {
               id: true,
               username: true,
               name: true,
-              avatarUrl: true
-            }
+              avatarUrl: true,
+            },
           },
           room: {
             select: {
               id: true,
               name: true,
               isGroup: true,
-              avatarUrl: true
-            }
-          }
+              avatarUrl: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         skip: skip,
-        take: parseInt(limit)
+        take: parseInt(limit),
       }),
-      prisma.message.count({ where })
+      prisma.message.count({ where }),
     ]);
 
     console.log(`Found ${allMessages.length} media files for user ${userId}`);
 
     // ENHANCED FILTERING: Check both filename AND mediaUrl for PDF indicators
-    const filteredMedia = allMessages.filter(message => {
+    const filteredMedia = allMessages.filter((message) => {
       if (!message.mediaUrl) return false;
 
-      const fileName = message.fileName || '';
-      const mediaUrl = message.mediaUrl || '';
+      const fileName = message.fileName || "";
+      const mediaUrl = message.mediaUrl || "";
 
       // Check for PDF indicators
       const isPDF =
-        fileName.toLowerCase().includes('resum') ||
-        fileName.toLowerCase().includes('cv') ||
-        fileName.toLowerCase().includes('resume') ||
-        fileName.toLowerCase().includes('document') ||
-        fileName.toLowerCase().includes('pdf') ||
-        mediaUrl.toLowerCase().includes('.pdf') ||
-        mediaUrl.toLowerCase().includes('/pdf') ||
-        mediaUrl.toLowerCase().includes('application/pdf') ||
-        (/^\d+$/.test(fileName.split('.')[0]) && fileName.length > 8);
+        fileName.toLowerCase().includes("resum") ||
+        fileName.toLowerCase().includes("cv") ||
+        fileName.toLowerCase().includes("resume") ||
+        fileName.toLowerCase().includes("document") ||
+        fileName.toLowerCase().includes("pdf") ||
+        mediaUrl.toLowerCase().includes(".pdf") ||
+        mediaUrl.toLowerCase().includes("/pdf") ||
+        mediaUrl.toLowerCase().includes("application/pdf") ||
+        (/^\d+$/.test(fileName.split(".")[0]) && fileName.length > 8);
 
       // Keep only if it's NOT a PDF
       return !isPDF;
     });
 
-    console.log(`🖼️  After enhanced PDF filter: ${filteredMedia.length} actual media files`);
+    console.log(
+      `🖼️  After enhanced PDF filter: ${filteredMedia.length} actual media files`,
+    );
 
     // Media formatting
-    const formattedMedia = filteredMedia.map(message => {
-      const fileExtension = message.fileName ?
-        message.fileName.split('.').pop().toLowerCase() :
-        null;
+    const formattedMedia = filteredMedia.map((message) => {
+      const fileExtension = message.fileName
+        ? message.fileName.split(".").pop().toLowerCase()
+        : null;
 
       let mimeType = null;
       if (fileExtension) {
         const mimeMap = {
           // Images
-          'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
-          'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml',
-          'bmp': 'image/bmp', 'heic': 'image/heic', 'heif': 'image/heif',
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          png: "image/png",
+          gif: "image/gif",
+          webp: "image/webp",
+          svg: "image/svg+xml",
+          bmp: "image/bmp",
+          heic: "image/heic",
+          heif: "image/heif",
 
           // Videos
-          'mp4': 'video/mp4', 'm4v': 'video/mp4', 'webm': 'video/webm',
-          'ogv': 'video/ogg', 'mov': 'video/quicktime', 'avi': 'video/x-msvideo',
-          'mkv': 'video/x-matroska', '3gp': 'video/3gpp', 'wmv': 'video/x-ms-wmv',
-          'flv': 'video/x-flv', 'mpg': 'video/mpeg', 'mpeg': 'video/mpeg',
+          mp4: "video/mp4",
+          m4v: "video/mp4",
+          webm: "video/webm",
+          ogv: "video/ogg",
+          mov: "video/quicktime",
+          avi: "video/x-msvideo",
+          mkv: "video/x-matroska",
+          "3gp": "video/3gpp",
+          wmv: "video/x-ms-wmv",
+          flv: "video/x-flv",
+          mpg: "video/mpeg",
+          mpeg: "video/mpeg",
 
           // ADDED: Audio types
-          'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'wav': 'audio/wav',
-          'ogg': 'audio/ogg', 'aac': 'audio/aac', 'flac': 'audio/flac'
+          mp3: "audio/mpeg",
+          m4a: "audio/mp4",
+          wav: "audio/wav",
+          ogg: "audio/ogg",
+          aac: "audio/aac",
+          flac: "audio/flac",
         };
         mimeType = mimeMap[fileExtension];
       }
@@ -881,17 +964,19 @@ export const getUserMedia = asyncHandler(async (req, res) => {
 
         room: {
           id: message.room.id,
-          name: message.room.name || (message.room.isGroup ? 'Group Chat' : 'Direct Message'),
+          name:
+            message.room.name ||
+            (message.room.isGroup ? "Group Chat" : "Direct Message"),
           isGroup: message.room.isGroup,
-          avatarUrl: message.room.avatarUrl
+          avatarUrl: message.room.avatarUrl,
         },
 
         sender: {
           id: message.sender.id,
           username: message.sender.username,
           name: message.sender.name,
-          avatarUrl: message.sender.avatarUrl
-        }
+          avatarUrl: message.sender.avatarUrl,
+        },
       };
     });
 
@@ -901,23 +986,28 @@ export const getUserMedia = asyncHandler(async (req, res) => {
       return stats;
     }, {});
 
-    return res.status(200).json(new ApiResponse(200, {
-      media: formattedMedia,
-      user: targetUser,
-      statistics: {
-        total: formattedMedia.length,
-        byType: typeStats
-      },
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(formattedMedia.length / limit),
-        totalCount: formattedMedia.length,
-        hasNext: (page * limit) < formattedMedia.length,
-        hasPrevious: page > 1,
-        limit: parseInt(limit)
-      }
-    }, "User media files retrieved successfully"));
-
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          media: formattedMedia,
+          user: targetUser,
+          statistics: {
+            total: formattedMedia.length,
+            byType: typeStats,
+          },
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(formattedMedia.length / limit),
+            totalCount: formattedMedia.length,
+            hasNext: page * limit < formattedMedia.length,
+            hasPrevious: page > 1,
+            limit: parseInt(limit),
+          },
+        },
+        "User media files retrieved successfully",
+      ),
+    );
   } catch (error) {
     console.error("Get user media error:", error);
     throw new ApiError(500, "Failed to retrieve user media files");
@@ -926,15 +1016,23 @@ export const getUserMedia = asyncHandler(async (req, res) => {
 
 export const getUserFiles = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { page = 1, limit = 20, fileType = 'all', search } = req.query;
+  const { page = 1, limit = 20, fileType = "all", search } = req.query;
 
   try {
-    console.log(`📁 Fetching files for user: ${userId}, type: ${fileType}, search: ${search}`);
+    console.log(
+      `📁 Fetching files for user: ${userId}, type: ${fileType}, search: ${search}`,
+    );
 
     // Verify the target user exists
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, name: true, email: true, avatarUrl: true }
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+      },
     });
 
     if (!targetUser) {
@@ -948,14 +1046,14 @@ export const getUserFiles = asyncHandler(async (req, res) => {
     // Build base WHERE clause
     const baseWhere = {
       senderId: userId,
-      deleted: false
+      deleted: false,
     };
 
     // Add search if provided
-    if (search && search.trim() !== '') {
+    if (search && search.trim() !== "") {
       baseWhere.OR = [
-        { fileName: { contains: search, mode: 'insensitive' } },
-        { content: { contains: search, mode: 'insensitive' } }
+        { fileName: { contains: search, mode: "insensitive" } },
+        { content: { contains: search, mode: "insensitive" } },
       ];
     }
 
@@ -968,16 +1066,16 @@ export const getUserFiles = asyncHandler(async (req, res) => {
             id: true,
             username: true,
             name: true,
-            avatarUrl: true
-          }
+            avatarUrl: true,
+          },
         },
         room: {
           select: {
             id: true,
             name: true,
             isGroup: true,
-            avatarUrl: true
-          }
+            avatarUrl: true,
+          },
         },
         repliedTo: {
           include: {
@@ -986,13 +1084,13 @@ export const getUserFiles = asyncHandler(async (req, res) => {
                 id: true,
                 username: true,
                 name: true,
-                avatarUrl: true
-              }
-            }
-          }
-        }
+                avatarUrl: true,
+              },
+            },
+          },
+        },
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
       // REMOVE skip/take here since we need ALL messages for file detection
     });
 
@@ -1041,9 +1139,9 @@ export const getUserFiles = asyncHandler(async (req, res) => {
 
       // 🚨 EXCLUDE images, videos, audio first
       const mediaTypes = {
-        'image': ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico'],
-        'video': ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', 'm4v'],
-        'audio': ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma']
+        image: ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico"],
+        video: ["mp4", "avi", "mov", "wmv", "flv", "webm", "mkv", "m4v"],
+        audio: ["mp3", "wav", "ogg", "m4a", "flac", "aac", "wma"],
       };
 
       const allExtensions = [extName, extUrl, contentExt];
@@ -1059,20 +1157,37 @@ export const getUserFiles = asyncHandler(async (req, res) => {
 
       // Your existing document detection
       const fileTypes = {
-        'pdf': ['pdf'],
-        'document': ['doc', 'docx', 'odt', 'docm', 'dotx', 'rtf', 'txt'],
-        'spreadsheet': ['xls', 'xlsx', 'ods', 'csv', 'xlsm', 'xltx'],
-        'presentation': ['ppt', 'pptx', 'odp', 'ppsx', 'potx'],
-        'archive': ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'],
-        'code': ['js', 'ts', 'py', 'java', 'cpp', 'c', 'html', 'css', 'php', 'rb', 'go', 'rs', 'swift'],
-        'config': ['json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'env']
+        pdf: ["pdf"],
+        document: ["doc", "docx", "odt", "docm", "dotx", "rtf", "txt"],
+        spreadsheet: ["xls", "xlsx", "ods", "csv", "xlsm", "xltx"],
+        presentation: ["ppt", "pptx", "odp", "ppsx", "potx"],
+        archive: ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"],
+        code: [
+          "js",
+          "ts",
+          "py",
+          "java",
+          "cpp",
+          "c",
+          "html",
+          "css",
+          "php",
+          "rb",
+          "go",
+          "rs",
+          "swift",
+        ],
+        config: ["json", "xml", "yml", "yaml", "ini", "conf", "env"],
       };
 
       const allMimes = [mime];
 
       for (const [type, extensions] of Object.entries(fileTypes)) {
         for (const ext of extensions) {
-          if (allExtensions.includes(ext) || allMimes.some(m => m.includes(ext))) {
+          if (
+            allExtensions.includes(ext) ||
+            allMimes.some((m) => m.includes(ext))
+          ) {
             return type;
           }
         }
@@ -1080,23 +1195,25 @@ export const getUserFiles = asyncHandler(async (req, res) => {
 
       // Default to 'file' if we can't determine specific type but it's a file message
       if (msg.type === "FILE") {
-        return 'file';
+        return "file";
       }
 
       return null;
     };
     // Filter messages to find ALL files
-    const allFileMessages = allMessages.filter(msg => {
+    const allFileMessages = allMessages.filter((msg) => {
       const fileType = detectFileType(msg);
       return fileType !== null;
     });
 
-    console.log(`📁 Detected ${allFileMessages.length} total files from ${allMessages.length} messages`);
+    console.log(
+      `📁 Detected ${allFileMessages.length} total files from ${allMessages.length} messages`,
+    );
 
     // Apply file type filter if specified
     let filteredFiles = allFileMessages;
-    if (fileType && fileType !== 'all') {
-      filteredFiles = allFileMessages.filter(msg => {
+    if (fileType && fileType !== "all") {
+      filteredFiles = allFileMessages.filter((msg) => {
         const detectedType = detectFileType(msg);
         return detectedType === fileType.toLowerCase();
       });
@@ -1113,10 +1230,12 @@ export const getUserFiles = asyncHandler(async (req, res) => {
     const endIndex = startIndex + limitInt;
     const paginatedFiles = filteredFiles.slice(startIndex, endIndex);
 
-    console.log(`📄 Page ${currentPage}: showing ${paginatedFiles.length} files (${startIndex}-${endIndex} of ${totalFileCount})`);
+    console.log(
+      `📄 Page ${currentPage}: showing ${paginatedFiles.length} files (${startIndex}-${endIndex} of ${totalFileCount})`,
+    );
 
     // Format the files response
-    const formattedFiles = paginatedFiles.map(message => {
+    const formattedFiles = paginatedFiles.map((message) => {
       const fileType = detectFileType(message);
       const fileUrl = normalizeUrl(message);
       const contentUrl = extractFirstUrl(message.content || "");
@@ -1137,75 +1256,93 @@ export const getUserFiles = asyncHandler(async (req, res) => {
 
         room: {
           id: message.room.id,
-          name: message.room.name || (message.room.isGroup ? 'Group Chat' : 'Direct Message'),
+          name:
+            message.room.name ||
+            (message.room.isGroup ? "Group Chat" : "Direct Message"),
           isGroup: message.room.isGroup,
-          avatarUrl: message.room.avatarUrl
+          avatarUrl: message.room.avatarUrl,
         },
 
         sender: {
           id: message.sender.id,
           username: message.sender.username,
           name: message.sender.name,
-          avatarUrl: message.sender.avatarUrl
+          avatarUrl: message.sender.avatarUrl,
         },
 
-        repliedTo: message.repliedTo ? {
-          id: message.repliedTo.id,
-          content: message.repliedTo.content,
-          type: message.repliedTo.type,
-          sender: {
-            id: message.repliedTo.sender.id,
-            username: message.repliedTo.sender.username,
-            name: message.repliedTo.sender.name
-          }
-        } : null
+        repliedTo: message.repliedTo
+          ? {
+              id: message.repliedTo.id,
+              content: message.repliedTo.content,
+              type: message.repliedTo.type,
+              sender: {
+                id: message.repliedTo.sender.id,
+                username: message.repliedTo.sender.username,
+                name: message.repliedTo.sender.name,
+              },
+            }
+          : null,
       };
     });
 
     // CORRECT PAGINATION DATA
-    return res.status(200).json(new ApiResponse(200, {
-      files: formattedFiles,
-      user: targetUser,
-      statistics: {
-        total: formattedFiles.length,
-        byType: formattedFiles.reduce((stats, file) => {
-          stats[file.fileType] = (stats[file.fileType] || 0) + 1;
-          return stats;
-        }, {}),
-        totalFromMessages: totalFileCount
-      },
-      // FIXED PAGINATION - now consistent
-      pagination: {
-        currentPage: currentPage,
-        totalPages: totalPages,
-        totalCount: totalFileCount,  // Total files after filtering
-        hasNext: currentPage < totalPages,
-        hasPrevious: currentPage > 1,
-        limit: limitInt
-      },
-      filters: {
-        appliedFileType: fileType,
-        availableTypes: ['all', 'pdf', 'document', 'spreadsheet', 'presentation', 'archive', 'code', 'config', 'file']
-      }
-    }, "User files retrieved successfully"));
-
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          files: formattedFiles,
+          user: targetUser,
+          statistics: {
+            total: formattedFiles.length,
+            byType: formattedFiles.reduce((stats, file) => {
+              stats[file.fileType] = (stats[file.fileType] || 0) + 1;
+              return stats;
+            }, {}),
+            totalFromMessages: totalFileCount,
+          },
+          // FIXED PAGINATION - now consistent
+          pagination: {
+            currentPage: currentPage,
+            totalPages: totalPages,
+            totalCount: totalFileCount, // Total files after filtering
+            hasNext: currentPage < totalPages,
+            hasPrevious: currentPage > 1,
+            limit: limitInt,
+          },
+          filters: {
+            appliedFileType: fileType,
+            availableTypes: [
+              "all",
+              "pdf",
+              "document",
+              "spreadsheet",
+              "presentation",
+              "archive",
+              "code",
+              "config",
+              "file",
+            ],
+          },
+        },
+        "User files retrieved successfully",
+      ),
+    );
   } catch (error) {
     console.error("Get user files error:", error);
     throw new ApiError(500, "Failed to retrieve user files");
   }
 });
 
-
 export const uploadAudioMessage = asyncHandler(async (req, res) => {
   const { roomId, replyTo, tempId, duration } = req.body;
   const senderId = req.user.id;
 
-  console.log('Audio upload request:', {
+  console.log("Audio upload request:", {
     roomId,
     hasFile: !!req.file,
     fileName: req.file?.originalname,
     duration,
-    fileSize: req.file?.size
+    fileSize: req.file?.size,
   });
 
   if (!roomId) {
@@ -1217,7 +1354,14 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
   }
 
   // Validate audio file
-  const audioMimeTypes = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/x-m4a'];
+  const audioMimeTypes = [
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/wav",
+    "audio/ogg",
+    "audio/aac",
+    "audio/x-m4a",
+  ];
   if (!audioMimeTypes.includes(req.file.mimetype)) {
     throw new ApiError(400, "Invalid audio file format");
   }
@@ -1237,26 +1381,26 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
 
   try {
     // Upload audio to Cloudinary - SPECIFIC AUDIO FOLDER
-    console.log('☁ Uploading audio to Cloudinary...');
+    console.log("☁ Uploading audio to Cloudinary...");
     const uploadedFile = await uploadOnCloudinary(
       req.file.path,
-      "chat/audio" // Specific folder for audio
+      "chat/audio", // Specific folder for audio
     );
 
     if (!uploadedFile) {
       throw new ApiError(500, "Failed to upload audio to Cloudinary");
     }
 
-    console.log('Audio uploaded to Cloudinary:', {
+    console.log("Audio uploaded to Cloudinary:", {
       url: uploadedFile.secure_url,
       size: uploadedFile.bytes,
-      format: uploadedFile.format
+      format: uploadedFile.format,
     });
 
     // Generate proper filename with extension
     const originalName = req.file.originalname || `recording_${Date.now()}`;
     const fileExtension = getAudioExtension(req.file.mimetype);
-    const fileName = `${originalName.split('.')[0]}_${Date.now()}.${fileExtension}`;
+    const fileName = `${originalName.split(".")[0]}_${Date.now()}.${fileExtension}`;
 
     // Create audio message with PROPER AUDIO TYPE
     const messageData = {
@@ -1314,11 +1458,11 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
       },
     });
 
-    console.log('💾 Audio message saved:', {
+    console.log("💾 Audio message saved:", {
       id: message.id,
       type: message.type,
       fileName: message.fileName,
-      duration: message.content
+      duration: message.content,
     });
 
     // PUSH NOTIFICATION for audio
@@ -1327,12 +1471,12 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
         where: {
           roomId,
           isActive: true,
-          userId: { not: senderId }
+          userId: { not: senderId },
         },
         select: { userId: true },
       });
 
-      const receiverIds = roomMembers.map(member => member.userId);
+      const receiverIds = roomMembers.map((member) => member.userId);
 
       if (receiverIds.length > 0) {
         await sendChatNotification(receiverIds, {
@@ -1340,13 +1484,13 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
           messageId: message.id,
           senderId: senderId,
           senderName: message.sender.username,
-          content: 'Audio message',
-          type: 'AUDIO'
+          content: "Audio message",
+          type: "AUDIO",
         });
-        console.log('Audio notification sent to', receiverIds.length, 'users');
+        console.log("Audio notification sent to", receiverIds.length, "users");
       }
     } catch (notificationError) {
-      console.error('Audio notification failed:', notificationError);
+      console.error("Audio notification failed:", notificationError);
     }
 
     // Create message status for all room members
@@ -1372,9 +1516,9 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
       io.to(roomId).emit("new-audio-message", {
         ...message,
         tempId,
-        duration: parseInt(message.content) || 0
+        duration: parseInt(message.content) || 0,
       });
-      console.log('Audio socket event emitted to room:', roomId);
+      console.log("Audio socket event emitted to room:", roomId);
     }
 
     // Update room's updatedAt
@@ -1389,20 +1533,23 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
         fs.unlinkSync(req.file.path);
       }
     } catch (cleanupError) {
-      console.log('⚠ Audio temp file cleanup failed:', cleanupError.message);
+      console.log("⚠ Audio temp file cleanup failed:", cleanupError.message);
     }
 
     return res.status(201).json(
-      new ApiResponse(201, {
-        message: {
-          ...message,
-          duration: parseInt(message.content) || 0
-        }
-      }, "Audio message sent successfully")
+      new ApiResponse(
+        201,
+        {
+          message: {
+            ...message,
+            duration: parseInt(message.content) || 0,
+          },
+        },
+        "Audio message sent successfully",
+      ),
     );
-
   } catch (error) {
-    console.error('Audio upload error:', error);
+    console.error("Audio upload error:", error);
 
     // Clean up temp file on error
     try {
@@ -1410,7 +1557,7 @@ export const uploadAudioMessage = asyncHandler(async (req, res) => {
         fs.unlinkSync(req.file.path);
       }
     } catch (cleanupError) {
-      console.log('⚠ Audio temp file cleanup failed:', cleanupError.message);
+      console.log("⚠ Audio temp file cleanup failed:", cleanupError.message);
     }
 
     throw new ApiError(500, `Failed to send audio: ${error.message}`);
@@ -1428,7 +1575,7 @@ export const getUserAudioFiles = asyncHandler(async (req, res) => {
     // Verify user exists
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, name: true }
+      select: { id: true, username: true, name: true },
     });
 
     if (!targetUser) {
@@ -1441,27 +1588,29 @@ export const getUserAudioFiles = asyncHandler(async (req, res) => {
     const where = {
       senderId: userId,
       type: "AUDIO",
-      mediaUrl: { not: null }
+      mediaUrl: { not: null },
     };
 
     const [audioMessages, totalCount] = await Promise.all([
       prisma.message.findMany({
         where,
         include: {
-          sender: { select: { id: true, username: true, name: true, avatarUrl: true } },
-          room: { select: { id: true, name: true, isGroup: true } }
+          sender: {
+            select: { id: true, username: true, name: true, avatarUrl: true },
+          },
+          room: { select: { id: true, name: true, isGroup: true } },
         },
         orderBy: { createdAt: "desc" },
         skip: skip,
-        take: parseInt(limit)
+        take: parseInt(limit),
       }),
-      prisma.message.count({ where })
+      prisma.message.count({ where }),
     ]);
 
     console.log(`Found ${audioMessages.length} audio files`);
 
     // Format response
-    const formattedAudio = audioMessages.map(audio => ({
+    const formattedAudio = audioMessages.map((audio) => ({
       id: audio.id,
       type: "AUDIO",
       mediaUrl: audio.mediaUrl,
@@ -1470,19 +1619,24 @@ export const getUserAudioFiles = asyncHandler(async (req, res) => {
       duration: parseInt(audio.content) || 0,
       createdAt: audio.createdAt,
       room: audio.room,
-      sender: audio.sender
+      sender: audio.sender,
     }));
 
-    return res.status(200).json(new ApiResponse(200, {
-      audio: formattedAudio,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalCount / limit),
-        totalCount: totalCount,
-        limit: parseInt(limit)
-      }
-    }, "Audio files retrieved successfully"));
-
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          audio: formattedAudio,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalCount / limit),
+            totalCount: totalCount,
+            limit: parseInt(limit),
+          },
+        },
+        "Audio files retrieved successfully",
+      ),
+    );
   } catch (error) {
     console.error("Get user audio error:", error);
     throw new ApiError(500, "Failed to retrieve audio files");
@@ -1495,18 +1649,20 @@ export const getAllGroupsForAdmin = asyncHandler(async (req, res) => {
     const skip = (page - 1) * parseInt(limit);
 
     // Build search filter
-    const searchFilter = search ? {
-      OR: [
-        { name: { contains: search, mode: 'insensitive' } },
-        { id: { contains: search, mode: 'insensitive' } }
-      ]
-    } : {};
+    const searchFilter = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { id: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {};
 
     const [groups, totalCount] = await Promise.all([
       prisma.chatRoom.findMany({
         where: {
           isGroup: true,
-          ...searchFilter
+          ...searchFilter,
         },
         include: {
           members: {
@@ -1539,8 +1695,8 @@ export const getAllGroupsForAdmin = asyncHandler(async (req, res) => {
             select: {
               members: true,
               messages: true,
-            }
-          }
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -1549,7 +1705,7 @@ export const getAllGroupsForAdmin = asyncHandler(async (req, res) => {
       prisma.chatRoom.count({
         where: {
           isGroup: true,
-          ...searchFilter
+          ...searchFilter,
         },
       }),
     ]);
@@ -1559,37 +1715,40 @@ export const getAllGroupsForAdmin = asyncHandler(async (req, res) => {
 
       // Format last message content
       const formatLastMessageContent = (message) => {
-        if (!message) return 'No messages yet';
+        if (!message) return "No messages yet";
 
         switch (message.type) {
-          case 'IMAGE':
-            return '📷 Image';
-          case 'FILE':
-            return '📄 File';
-          case 'AUDIO':
-            return '🎵 Audio';
-          case 'VIDEO':
-            return '🎬 Video';
-          case 'TEXT':
+          case "IMAGE":
+            return "📷 Image";
+          case "FILE":
+            return "📄 File";
+          case "AUDIO":
+            return "🎵 Audio";
+          case "VIDEO":
+            return "🎬 Video";
+          case "TEXT":
           default:
-            return message.content || 'Message';
+            return message.content || "Message";
         }
       };
 
       const formattedLastMessage = lastMessage
         ? {
-          id: lastMessage.id,
-          content: formatLastMessageContent(lastMessage),
-          type: lastMessage.type || "text",
-          sender: lastMessage.sender
-            ? {
-              id: lastMessage.sender.id,
-              username: lastMessage.sender.username || lastMessage.sender.name || "Unknown",
-              avatarUrl: lastMessage.sender.avatarUrl || null,
-            }
-            : null,
-          createdAt: lastMessage.createdAt,
-        }
+            id: lastMessage.id,
+            content: formatLastMessageContent(lastMessage),
+            type: lastMessage.type || "text",
+            sender: lastMessage.sender
+              ? {
+                  id: lastMessage.sender.id,
+                  username:
+                    lastMessage.sender.username ||
+                    lastMessage.sender.name ||
+                    "Unknown",
+                  avatarUrl: lastMessage.sender.avatarUrl || null,
+                }
+              : null,
+            createdAt: lastMessage.createdAt,
+          }
         : null;
 
       return {
@@ -1599,12 +1758,13 @@ export const getAllGroupsForAdmin = asyncHandler(async (req, res) => {
         description: group.description || null,
         roomType: group.roomType,
         lastMessage: formattedLastMessage,
-        lastMessageTime: lastMessage?.createdAt || group.updatedAt || group.createdAt,
+        lastMessageTime:
+          lastMessage?.createdAt || group.updatedAt || group.createdAt,
         memberCount: group._count.members,
         messageCount: group._count.messages,
         createdAt: group.createdAt,
         updatedAt: group.updatedAt,
-        members: group.members.map(member => ({
+        members: group.members.map((member) => ({
           id: member.user.id,
           username: member.user.username || member.user.name || "Unknown",
           avatarUrl: member.user.avatarUrl || null,
@@ -1644,7 +1804,7 @@ export const createGroup = asyncHandler(async (req, res) => {
     if (!name) {
       return res.status(400).json({
         success: false,
-        message: "Group name is required"
+        message: "Group name is required",
       });
     }
 
@@ -1664,7 +1824,7 @@ export const createGroup = asyncHandler(async (req, res) => {
       console.log("Avatar uploaded successfully:", avatarUrl);
 
       // Clean up local file (same as working API)
-      const fs = await import('fs');
+      const fs = await import("fs");
       if (fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
@@ -1673,11 +1833,11 @@ export const createGroup = asyncHandler(async (req, res) => {
     // Parse memberIds (same as before)
     let parsedMemberIds = [];
     if (memberIds) {
-      if (typeof memberIds === 'string') {
+      if (typeof memberIds === "string") {
         try {
           parsedMemberIds = JSON.parse(memberIds);
         } catch (e) {
-          parsedMemberIds = memberIds.split(',').filter(id => id.trim());
+          parsedMemberIds = memberIds.split(",").filter((id) => id.trim());
         }
       } else if (Array.isArray(memberIds)) {
         parsedMemberIds = memberIds;
@@ -1701,7 +1861,7 @@ export const createGroup = asyncHandler(async (req, res) => {
             { userId: currentUserId, role: "OWNER" },
             ...uniqueMemberIds.map((id) => ({
               userId: id,
-              role: "MEMBER"
+              role: "MEMBER",
             })),
           ],
         },
@@ -1715,8 +1875,8 @@ export const createGroup = asyncHandler(async (req, res) => {
                 username: true,
                 avatarUrl: true,
                 name: true,
-                email: true
-              }
+                email: true,
+              },
             },
           },
         },
@@ -1730,7 +1890,6 @@ export const createGroup = asyncHandler(async (req, res) => {
       data: group,
       message: "Group created successfully",
     });
-
   } catch (error) {
     console.error("Error creating group:", error);
     return res.status(500).json({
@@ -1741,7 +1900,6 @@ export const createGroup = asyncHandler(async (req, res) => {
   }
 });
 
-
 // Rename group
 export const renameGroup = async (req, res) => {
   try {
@@ -1751,7 +1909,7 @@ export const renameGroup = async (req, res) => {
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Group name is required"
+        message: "Group name is required",
       });
     }
 
@@ -1759,31 +1917,33 @@ export const renameGroup = async (req, res) => {
     const [currentUser, userMembership, group] = await Promise.all([
       prisma.user.findUnique({
         where: { id: req.user.id },
-        select: { role: true, username: true, name: true }
+        select: { role: true, username: true, name: true },
       }),
       prisma.chatMember.findUnique({
         where: { userId_roomId: { userId: req.user.id, roomId: groupId } },
       }),
       prisma.chatRoom.findUnique({
-        where: { id: groupId, isGroup: true }
-      })
+        where: { id: groupId, isGroup: true },
+      }),
     ]);
 
     if (!group) {
       return res.status(404).json({
         success: false,
-        message: "Group not found"
+        message: "Group not found",
       });
     }
 
     // Consistent permission check with your other APIs
-    const isPlatformAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role);
-    const isGroupOwnerOrAdmin = userMembership && ['OWNER', 'ADMIN'].includes(userMembership.role);
+    const isPlatformAdmin = ["ADMIN", "SUPER_ADMIN"].includes(currentUser.role);
+    const isGroupOwnerOrAdmin =
+      userMembership && ["OWNER", "ADMIN"].includes(userMembership.role);
 
     if (!isPlatformAdmin && !isGroupOwnerOrAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only group owners, admins, or platform admins can rename the group"
+        message:
+          "Only group owners, admins, or platform admins can rename the group",
       });
     }
 
@@ -1791,11 +1951,11 @@ export const renameGroup = async (req, res) => {
     const updatedGroup = await prisma.chatRoom.update({
       where: {
         id: groupId,
-        isGroup: true
+        isGroup: true,
       },
       data: {
         name: name.trim(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       include: {
         members: {
@@ -1805,21 +1965,22 @@ export const renameGroup = async (req, res) => {
                 id: true,
                 username: true,
                 email: true,
-                avatarUrl: true
-              }
-            }
-          }
-        }
-      }
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     // Create system message (consistent with your pattern)
-    const actionBy = isPlatformAdmin ? 'Platform Admin' : '';
+    const actionBy = isPlatformAdmin ? "Platform Admin" : "";
     const displayName = currentUser.username || currentUser.name;
 
     await prisma.message.create({
       data: {
-        content: `Group renamed to "${name.trim()}" by ${actionBy}${displayName}`.trim(),
+        content:
+          `Group renamed to "${name.trim()}" by ${actionBy}${displayName}`.trim(),
         roomId: groupId,
         senderId: req.user.id,
         type: "SYSTEM",
@@ -1827,14 +1988,14 @@ export const renameGroup = async (req, res) => {
           create: (
             await prisma.chatMember.findMany({
               where: { roomId: groupId },
-              select: { userId: true }
+              select: { userId: true },
             })
           ).map((m) => ({
             userId: m.userId,
-            status: "SENT"
-          }))
-        }
-      }
+            status: "SENT",
+          })),
+        },
+      },
     });
 
     // Emit socket events (consistent with your pattern)
@@ -1845,37 +2006,36 @@ export const renameGroup = async (req, res) => {
         newName: name.trim(),
         renamedBy: req.user.id,
         renamedByUsername: displayName,
-        isPlatformAdmin
+        isPlatformAdmin,
       });
 
       io.to(groupId).emit("group-updated", {
         groupId,
         name: name.trim(),
         updatedAt: updatedGroup.updatedAt,
-        updatedBy: req.user.id
+        updatedBy: req.user.id,
       });
     }
 
     return res.status(200).json({
       success: true,
       data: updatedGroup,
-      message: "Group renamed successfully"
+      message: "Group renamed successfully",
     });
-
   } catch (error) {
     console.error("Rename group error:", error);
 
     if (error.code === "P2025") {
       return res.status(404).json({
         success: false,
-        message: "Group not found"
+        message: "Group not found",
       });
     }
 
     return res.status(500).json({
       success: false,
       message: "Error renaming group",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1890,32 +2050,33 @@ export const deleteGroup = asyncHandler(async (req, res) => {
     const group = await prisma.chatRoom.findUnique({
       where: {
         id: groupId,
-        isGroup: true
+        isGroup: true,
       },
       include: {
         members: {
           where: { userId: currentUserId },
-          select: { role: true }
-        }
-      }
+          select: { role: true },
+        },
+      },
     });
 
     if (!group) {
       return res.status(404).json({
         success: false,
-        message: "Group not found"
+        message: "Group not found",
       });
     }
 
     // UPDATED: Allow ADMIN, SUPER_ADMIN, or group OWNER to delete
     const userMembership = group.members[0];
-    const isOwner = userMembership && userMembership.role === 'OWNER';
-    const isAdmin = currentUserRole === 'ADMIN' || currentUserRole === 'SUPER_ADMIN';
+    const isOwner = userMembership && userMembership.role === "OWNER";
+    const isAdmin =
+      currentUserRole === "ADMIN" || currentUserRole === "SUPER_ADMIN";
 
     if (!isOwner && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only group owner or admins can delete the group"
+        message: "Only group owner or admins can delete the group",
       });
     }
 
@@ -1925,24 +2086,24 @@ export const deleteGroup = asyncHandler(async (req, res) => {
       await tx.messageStatus.deleteMany({
         where: {
           message: {
-            roomId: groupId
-          }
-        }
+            roomId: groupId,
+          },
+        },
       });
 
       // 2. Delete all messages
       await tx.message.deleteMany({
-        where: { roomId: groupId }
+        where: { roomId: groupId },
       });
 
       // 3. Delete all chat members
       await tx.chatMember.deleteMany({
-        where: { roomId: groupId }
+        where: { roomId: groupId },
       });
 
       // 4. Delete the group itself
       await tx.chatRoom.delete({
-        where: { id: groupId }
+        where: { id: groupId },
       });
     });
 
@@ -1952,29 +2113,28 @@ export const deleteGroup = asyncHandler(async (req, res) => {
       io.to(groupId).emit("group-deleted", {
         groupId,
         deletedBy: currentUserId,
-        deletedByRole: currentUserRole
+        deletedByRole: currentUserRole,
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: "Group deleted successfully"
+      message: "Group deleted successfully",
     });
-
   } catch (error) {
     console.error("Delete group error:", error);
 
     if (error.code === "P2025") {
       return res.status(404).json({
         success: false,
-        message: "Group not found"
+        message: "Group not found",
       });
     }
 
     return res.status(500).json({
       success: false,
       message: "Error deleting group",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1983,27 +2143,29 @@ export const getGroupMessagesAsAdmin = asyncHandler(async (req, res) => {
   const { roomId } = req.params;
   const { page = 1, limit = 50 } = req.query;
 
-
-
   // Verify it's a group room
   const room = await prisma.chatRoom.findUnique({
     where: {
       id: roomId,
-      roomType: "GROUP"
+      roomType: "GROUP",
     },
     include: {
       members: {
         include: {
           user: {
             select: {
-              id: true, username: true, name: true, email: true,
-              role: true, avatarUrl: true
-            }
-          }
+              id: true,
+              username: true,
+              name: true,
+              email: true,
+              role: true,
+              avatarUrl: true,
+            },
+          },
         },
-        where: { isActive: true }
-      }
-    }
+        where: { isActive: true },
+      },
+    },
   });
 
   if (!room) {
@@ -2016,7 +2178,13 @@ export const getGroupMessagesAsAdmin = asyncHandler(async (req, res) => {
       where: { roomId },
       include: {
         sender: {
-          select: { id: true, username: true, name: true, avatarUrl: true, email: true }
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            avatarUrl: true,
+            email: true,
+          },
         },
         repliedTo: {
           include: {
@@ -2027,9 +2195,9 @@ export const getGroupMessagesAsAdmin = asyncHandler(async (req, res) => {
         },
         reactions: {
           include: {
-            user: { select: { id: true, username: true, name: true } }
-          }
-        }
+            user: { select: { id: true, username: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
@@ -2043,9 +2211,12 @@ export const getGroupMessagesAsAdmin = asyncHandler(async (req, res) => {
     ...msg,
     repliedTo: msg.repliedTo
       ? {
-        ...msg.repliedTo,
-        senderName: msg.repliedTo.sender?.username || msg.repliedTo.sender?.name || "Unknown",
-      }
+          ...msg.repliedTo,
+          senderName:
+            msg.repliedTo.sender?.username ||
+            msg.repliedTo.sender?.name ||
+            "Unknown",
+        }
       : null,
   }));
 
@@ -2065,19 +2236,19 @@ export const getGroupMessagesAsAdmin = asyncHandler(async (req, res) => {
           avatarUrl: room.avatarUrl,
           createdAt: room.createdAt,
           memberCount: room.members.length,
-          members: room.members.map(m => ({
+          members: room.members.map((m) => ({
             id: m.user.id,
             username: m.user.username,
             name: m.user.name,
             email: m.user.email,
             role: m.user.role,
             chatMemberRole: m.role,
-            joinedAt: m.joinedAt
-          }))
-        }
+            joinedAt: m.joinedAt,
+          })),
+        },
       },
-      "Group messages fetched successfully (Admin View)"
-    )
+      "Group messages fetched successfully (Admin View)",
+    ),
   );
 });
 
@@ -2092,19 +2263,24 @@ export const addMembersToRoom = asyncHandler(async (req, res) => {
   const [currentUser, userMembership] = await Promise.all([
     prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { role: true, username: true, name: true }
+      select: { role: true, username: true, name: true },
     }),
     prisma.chatMember.findUnique({
       where: { userId_roomId: { userId: req.user.id, roomId } },
-    })
+    }),
   ]);
 
   // Allow: Platform ADMIN OR Group OWNER/ADMIN
-  const isPlatformAdmin = currentUser.role === 'ADMIN' || "SUPER_ADMIN";
-  const isGroupOwnerOrAdmin = userMembership && ['OWNER', 'ADMIN', "SUPER_ADMIN"].includes(userMembership.role);
+  const isPlatformAdmin = currentUser.role === "ADMIN" || "SUPER_ADMIN";
+  const isGroupOwnerOrAdmin =
+    userMembership &&
+    ["OWNER", "ADMIN", "SUPER_ADMIN"].includes(userMembership.role);
 
   if (!isPlatformAdmin && !isGroupOwnerOrAdmin) {
-    throw new ApiError(403, "Only group owners, admins, or super admins can add members");
+    throw new ApiError(
+      403,
+      "Only group owners, admins, or super admins can add members",
+    );
   }
 
   const room = await prisma.chatRoom.findUnique({ where: { id: roomId } });
@@ -2117,8 +2293,8 @@ export const addMembersToRoom = asyncHandler(async (req, res) => {
         where: { userId_roomId: { userId, roomId } },
         update: {},
         create: { userId, roomId, joinedAt: new Date(), role: "MEMBER" },
-      })
-    )
+      }),
+    ),
   );
 
   // Get usernames of added members for the notification
@@ -2168,29 +2344,32 @@ export const removeMemberFromRoom = asyncHandler(async (req, res) => {
   const [currentUser, userMembership] = await Promise.all([
     prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { role: true, username: true, name: true }
+      select: { role: true, username: true, name: true },
     }),
     prisma.chatMember.findUnique({
       where: { userId_roomId: { userId: req.user.id, roomId } },
-    })
+    }),
   ]);
 
   // Allow: Platform ADMIN OR Group OWNER/ADMIN
-  const isPlatformAdmin = currentUser.role === 'ADMIN' || currentUser.role === "SUPER_ADMIN";
-  const isGroupOwnerOrAdmin = userMembership && ['OWNER', 'ADMIN'].includes(userMembership.role);
+  const isPlatformAdmin =
+    currentUser.role === "ADMIN" || currentUser.role === "SUPER_ADMIN";
+  const isGroupOwnerOrAdmin =
+    userMembership && ["OWNER", "ADMIN"].includes(userMembership.role);
 
   if (!isPlatformAdmin && !isGroupOwnerOrAdmin) {
-    throw new ApiError(403, "Only group owners, admins, or platform admins can remove members");
+    throw new ApiError(
+      403,
+      "Only group owners, admins, or platform admins can remove members",
+    );
   }
-
 
   // Get the member being removed to check their role
   const targetMember = await prisma.chatMember.findUnique({
     where: { userId_roomId: { userId, roomId } },
   });
 
-  if (!targetMember)
-    throw new ApiError(404, "Member not found in this group");
+  if (!targetMember) throw new ApiError(404, "Member not found in this group");
 
   // Get username of removed member for the notification
   const removedUser = await prisma.user.findUnique({
@@ -2242,8 +2421,8 @@ export const getAllAdminsAndSuperAdmins = asyncHandler(async (req, res) => {
     const admins = await prisma.user.findMany({
       where: {
         role: {
-          in: ["ADMIN", "SUPER_ADMIN"]
-        }
+          in: ["ADMIN", "SUPER_ADMIN"],
+        },
         // No filters - get ALL including inactive/deleted if needed
       },
       select: {
@@ -2265,12 +2444,14 @@ export const getAllAdminsAndSuperAdmins = asyncHandler(async (req, res) => {
         // Include ALL fields you have
       },
       orderBy: [
-        { role: 'desc' }, // SUPER_ADMIN first
-        { name: 'asc' }   // Then alphabetically
-      ]
+        { role: "desc" }, // SUPER_ADMIN first
+        { name: "asc" }, // Then alphabetically
+      ],
     });
 
-    console.log(`Found ${admins.length} total admins and super admins in database`);
+    console.log(
+      `Found ${admins.length} total admins and super admins in database`,
+    );
 
     // Simple response with all admins
     res.status(200).json(
@@ -2279,19 +2460,19 @@ export const getAllAdminsAndSuperAdmins = asyncHandler(async (req, res) => {
         {
           admins: admins, // Direct array of all admins
           totalCount: admins.length,
-          superAdminCount: admins.filter(admin => admin.role === "SUPER_ADMIN").length,
-          adminCount: admins.filter(admin => admin.role === "ADMIN").length
+          superAdminCount: admins.filter(
+            (admin) => admin.role === "SUPER_ADMIN",
+          ).length,
+          adminCount: admins.filter((admin) => admin.role === "ADMIN").length,
         },
-        `Successfully fetched ${admins.length} admins and super admins`
-      )
+        `Successfully fetched ${admins.length} admins and super admins`,
+      ),
     );
-
   } catch (error) {
-    console.error('💥 Error fetching all admins:', error);
+    console.error("💥 Error fetching all admins:", error);
     throw new ApiError(500, "Failed to fetch admin team members");
   }
 });
-
 
 // Get all contact messages for admin panel
 export const getAllContactMessages = asyncHandler(async (req, res) => {
@@ -2303,16 +2484,16 @@ export const getAllContactMessages = asyncHandler(async (req, res) => {
     // Build where clause
     const where = {};
 
-    if (status && status !== 'all') {
+    if (status && status !== "all") {
       where.status = status;
     }
 
-    if (search && search.trim() !== '') {
+    if (search && search.trim() !== "") {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { subject: { contains: search, mode: 'insensitive' } },
-        { message: { contains: search, mode: 'insensitive' } }
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { subject: { contains: search, mode: "insensitive" } },
+        { message: { contains: search, mode: "insensitive" } },
       ];
     }
 
@@ -2326,22 +2507,28 @@ export const getAllContactMessages = asyncHandler(async (req, res) => {
               username: true,
               avatarUrl: true,
               department: true,
-              designation: true
-            }
-          }
+              designation: true,
+            },
+          },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         skip: skip,
-        take: parseInt(limit)
+        take: parseInt(limit),
       }),
-      prisma.contactMessage.count({ where })
+      prisma.contactMessage.count({ where }),
     ]);
 
     // Calculate statistics
     const totalMessages = await prisma.contactMessage.count();
-    const pendingCount = await prisma.contactMessage.count({ where: { status: 'PENDING' } });
-    const readCount = await prisma.contactMessage.count({ where: { status: 'READ' } });
-    const repliedCount = await prisma.contactMessage.count({ where: { status: 'REPLIED' } });
+    const pendingCount = await prisma.contactMessage.count({
+      where: { status: "PENDING" },
+    });
+    const readCount = await prisma.contactMessage.count({
+      where: { status: "READ" },
+    });
+    const repliedCount = await prisma.contactMessage.count({
+      where: { status: "REPLIED" },
+    });
 
     res.status(200).json(
       new ApiResponse(
@@ -2352,20 +2539,19 @@ export const getAllContactMessages = asyncHandler(async (req, res) => {
             total: totalMessages,
             pending: pendingCount,
             read: readCount,
-            replied: repliedCount
+            replied: repliedCount,
           },
           pagination: {
             currentPage: parseInt(page),
             totalPages: Math.ceil(totalCount / limit),
             totalCount: totalCount,
-            hasNext: (page * limit) < totalCount,
-            hasPrevious: page > 1
-          }
+            hasNext: page * limit < totalCount,
+            hasPrevious: page > 1,
+          },
         },
-        "Contact messages retrieved successfully"
-      )
+        "Contact messages retrieved successfully",
+      ),
     );
-
   } catch (error) {
     console.error("Error fetching contact messages:", error);
     throw new ApiError(500, "Failed to fetch contact messages");
@@ -2396,16 +2582,16 @@ export const getAllMeetingsForAdmin = async (req, res) => {
 
 // In admin.controller.js - Add this function
 export const getMessageAnalytics = asyncHandler(async (req, res) => {
-  const { period = 'weekly' } = req.query;
+  const { period = "weekly" } = req.query;
 
   try {
     // EXCLUDE system messages from counts
     const totalMessages = await prisma.message.count({
       where: {
         type: {
-          not: 'SYSTEM' // ← EXCLUDE system messages
-        }
-      }
+          not: "SYSTEM", // ← EXCLUDE system messages
+        },
+      },
     });
 
     const totalUsers = await prisma.user.count();
@@ -2413,25 +2599,28 @@ export const getMessageAnalytics = asyncHandler(async (req, res) => {
 
     let analyticsData = [];
 
-    if (period === 'weekly') {
+    if (period === "weekly") {
       analyticsData = await getFourWeeksOfCurrentMonth();
     } else {
       analyticsData = await getTwelveMonthsData();
     }
 
     return res.status(200).json(
-      new ApiResponse(200, {
-        period,
-        data: analyticsData,
-        totalMessages,
-        summary: {
+      new ApiResponse(
+        200,
+        {
+          period,
+          data: analyticsData,
           totalMessages,
-          totalUsers,
-          totalRooms
-        }
-      }, "Analytics retrieved successfully")
+          summary: {
+            totalMessages,
+            totalUsers,
+            totalRooms,
+          },
+        },
+        "Analytics retrieved successfully",
+      ),
     );
-
   } catch (error) {
     throw new ApiError(500, "Failed to retrieve analytics");
   }
@@ -2454,23 +2643,23 @@ async function getFourWeeksOfCurrentMonth() {
     where: {
       createdAt: {
         gte: firstDay,
-        lte: lastDay
+        lte: lastDay,
       },
       type: {
-        not: 'SYSTEM' // ← EXCLUDE system messages
-      }
+        not: "SYSTEM", // ← EXCLUDE system messages
+      },
     },
     select: {
       createdAt: true,
       senderId: true,
-    }
+    },
   });
 
   // Divide month into 4 weeks
   const daysPerWeek = Math.ceil(totalDays / 4);
 
   for (let week = 0; week < 4; week++) {
-    const startDay = (week * daysPerWeek) + 1;
+    const startDay = week * daysPerWeek + 1;
     let endDay = (week + 1) * daysPerWeek;
 
     // Don't go beyond month end
@@ -2479,17 +2668,17 @@ async function getFourWeeksOfCurrentMonth() {
     const weekStart = new Date(currentYear, currentMonth, startDay);
     const weekEnd = new Date(currentYear, currentMonth, endDay, 23, 59, 59);
 
-    const weekMessages = messages.filter(msg => {
+    const weekMessages = messages.filter((msg) => {
       const msgDate = new Date(msg.createdAt);
       return msgDate >= weekStart && msgDate <= weekEnd;
     });
 
-    const uniqueSenders = new Set(weekMessages.map(msg => msg.senderId));
+    const uniqueSenders = new Set(weekMessages.map((msg) => msg.senderId));
 
     weeks.push({
       period: `Week ${week + 1}`,
       messageCount: weekMessages.length,
-      activeUsers: uniqueSenders.size
+      activeUsers: uniqueSenders.size,
     });
   }
 
@@ -2499,7 +2688,20 @@ async function getFourWeeksOfCurrentMonth() {
 // Get last 12 months (FIXED: exclude system messages)
 async function getTwelveMonthsData() {
   const months = [];
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
@@ -2523,30 +2725,32 @@ async function getTwelveMonthsData() {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0, 23, 59, 59);
 
-    console.log(`📊 Processing: ${monthName} ${year} (${firstDay.toDateString()} to ${lastDay.toDateString()})`);
+    console.log(
+      `📊 Processing: ${monthName} ${year} (${firstDay.toDateString()} to ${lastDay.toDateString()})`,
+    );
 
     // Get messages for this specific month (EXCLUDE system messages)
     const monthMessages = await prisma.message.findMany({
       where: {
         createdAt: {
           gte: firstDay,
-          lte: lastDay
+          lte: lastDay,
         },
         type: {
-          not: 'SYSTEM' // ← EXCLUDE system messages
-        }
+          not: "SYSTEM", // ← EXCLUDE system messages
+        },
       },
       select: {
         senderId: true,
-      }
+      },
     });
 
-    const uniqueSenders = new Set(monthMessages.map(msg => msg.senderId));
+    const uniqueSenders = new Set(monthMessages.map((msg) => msg.senderId));
 
     months.push({
       period: `${monthName} ${year}`,
       messageCount: monthMessages.length,
-      activeUsers: uniqueSenders.size
+      activeUsers: uniqueSenders.size,
     });
   }
 
@@ -2555,26 +2759,25 @@ async function getTwelveMonthsData() {
 
 export const getMediaDistribution = asyncHandler(async (req, res) => {
   try {
-
     // Get counts and total sizes for each media type
     const mediaStats = await prisma.message.groupBy({
-      by: ['type'],
+      by: ["type"],
       where: {
-        type: { in: ['AUDIO', 'VIDEO', 'IMAGE', 'FILE'] }
+        type: { in: ["AUDIO", "VIDEO", "IMAGE", "FILE"] },
       },
       _count: {
-        id: true
+        id: true,
       },
       _sum: {
-        fileSize: true
-      }
+        fileSize: true,
+      },
     });
 
     // Convert to object for easier access
     const statsMap = mediaStats.reduce((acc, item) => {
       acc[item.type] = {
         count: item._count.id,
-        totalSize: item._sum.fileSize || 0
+        totalSize: item._sum.fileSize || 0,
       };
       return acc;
     }, {});
@@ -2591,7 +2794,8 @@ export const getMediaDistribution = asyncHandler(async (req, res) => {
       totalFiles > 0 ? Number(((count / totalFiles) * 100).toFixed(1)) : 0;
 
     // Format size in MB
-    const formatSize = (bytes) => bytes ? Math.round(bytes / (1024 * 1024)) : 0;
+    const formatSize = (bytes) =>
+      bytes ? Math.round(bytes / (1024 * 1024)) : 0;
 
     const mediaData = [
       {
@@ -2599,46 +2803,52 @@ export const getMediaDistribution = asyncHandler(async (req, res) => {
         count: audioCount,
         percentage: calculatePercentage(audioCount),
         color: "#465FFF",
-        totalSize: formatSize(statsMap.AUDIO?.totalSize)
+        totalSize: formatSize(statsMap.AUDIO?.totalSize),
       },
       {
         type: "video",
         count: videoCount,
         percentage: calculatePercentage(videoCount),
         color: "#FF4560",
-        totalSize: formatSize(statsMap.VIDEO?.totalSize)
+        totalSize: formatSize(statsMap.VIDEO?.totalSize),
       },
       {
         type: "image",
         count: imageCount,
         percentage: calculatePercentage(imageCount),
         color: "#00E396",
-        totalSize: formatSize(statsMap.IMAGE?.totalSize)
+        totalSize: formatSize(statsMap.IMAGE?.totalSize),
       },
       {
         type: "file",
         count: fileCount,
         percentage: calculatePercentage(fileCount),
         color: "#FEB019",
-        totalSize: formatSize(statsMap.FILE?.totalSize)
-      }
+        totalSize: formatSize(statsMap.FILE?.totalSize),
+      },
     ];
 
     return res.status(200).json(
-      new ApiResponse(200, {
-        mediaData,
-        totalFiles,
-        summary: {
+      new ApiResponse(
+        200,
+        {
+          mediaData,
           totalFiles,
-          audioCount,
-          videoCount,
-          imageCount,
-          fileCount,
-          totalSize: mediaData.reduce((sum, item) => sum + (item.totalSize || 0), 0)
-        }
-      }, "Media distribution retrieved successfully")
+          summary: {
+            totalFiles,
+            audioCount,
+            videoCount,
+            imageCount,
+            fileCount,
+            totalSize: mediaData.reduce(
+              (sum, item) => sum + (item.totalSize || 0),
+              0,
+            ),
+          },
+        },
+        "Media distribution retrieved successfully",
+      ),
     );
-
   } catch (error) {
     console.error("Get media distribution error:", error);
     throw new ApiError(500, "Failed to retrieve media distribution");
@@ -2657,10 +2867,10 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
       roomType: "DIRECT",
       members: {
         every: {
-          userId: { in: [userId, otherUserId] }
-        }
-      }
-    }
+          userId: { in: [userId, otherUserId] },
+        },
+      },
+    },
   });
 
   if (!room) {
@@ -2671,9 +2881,9 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
         pagination: {
           currentPage: parseInt(page),
           totalPages: 0,
-          totalCount: 0
-        }
-      }
+          totalCount: 0,
+        },
+      },
     });
   }
 
@@ -2682,7 +2892,7 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
     prisma.message.findMany({
       where: {
         roomId: room.id,
-        type: "TEXT"
+        type: "TEXT",
       },
       include: {
         sender: {
@@ -2690,8 +2900,8 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
             id: true,
             username: true,
             name: true,
-            avatarUrl: true
-          }
+            avatarUrl: true,
+          },
         },
         repliedTo: {
           include: {
@@ -2699,11 +2909,11 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
               select: {
                 id: true,
                 username: true,
-                name: true
-              }
-            }
-          }
-        }
+                name: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       skip: skip,
@@ -2712,9 +2922,9 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
     prisma.message.count({
       where: {
         roomId: room.id,
-        type: "TEXT"
-      }
-    })
+        type: "TEXT",
+      },
+    }),
   ]);
 
   const totalPages = Math.ceil(totalCount / parseInt(limit));
@@ -2726,24 +2936,24 @@ export const getDirectConversation = asyncHandler(async (req, res) => {
       pagination: {
         currentPage: parseInt(page),
         totalPages: totalPages,
-        totalCount: totalCount
-      }
-    }
+        totalCount: totalCount,
+      },
+    },
   });
 });
 
 export const getDepartments = asyncHandler(async (req, res) => {
   try {
     const departmentStats = await prisma.user.groupBy({
-      by: ['department'],
+      by: ["department"],
       where: {
         isActive: true,
         deletedAt: null,
-        department: { not: null, not: 'CLIENT' }
+        department: { not: null, not: "CLIENT" },
       },
       _count: {
-        id: true
-      }
+        id: true,
+      },
     });
 
     const departmentsWithCounts = await Promise.all(
@@ -2752,27 +2962,27 @@ export const getDepartments = asyncHandler(async (req, res) => {
         const teamLeadsCount = await prisma.user.count({
           where: {
             department: dept.department,
-            role: { in: ['ADMIN', 'SUPER_ADMIN'] },
-            isActive: true
-          }
+            role: { in: ["ADMIN", "SUPER_ADMIN"] },
+            isActive: true,
+          },
         });
 
-        // Count team members (USER role)  
+        // Count team members (USER role)
         const teamMembersCount = await prisma.user.count({
           where: {
             department: dept.department,
-            role: 'USER',
-            isActive: true
-          }
+            role: "USER",
+            isActive: true,
+          },
         });
 
         // Count SUPER_ADMIN separately or exclude from lead/member counts
         const superAdminCount = await prisma.user.count({
           where: {
             department: dept.department,
-            role: 'SUPER_ADMIN',
-            isActive: true
-          }
+            role: "SUPER_ADMIN",
+            isActive: true,
+          },
         });
 
         return {
@@ -2780,18 +2990,23 @@ export const getDepartments = asyncHandler(async (req, res) => {
           count: dept._count.id,
           teamLeads: teamLeadsCount,
           teamMembers: teamMembersCount,
-          superAdmins: superAdminCount // Optional: track SUPER_ADMIN separately
+          superAdmins: superAdminCount, // Optional: track SUPER_ADMIN separately
         };
-      })
+      }),
     );
 
-    res.status(200).json(new ApiResponse(200, {
-      departments: departmentsWithCounts,
-      totalDepartments: departmentsWithCounts.length
-    }, "Departments retrieved successfully"));
-
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          departments: departmentsWithCounts,
+          totalDepartments: departmentsWithCounts.length,
+        },
+        "Departments retrieved successfully",
+      ),
+    );
   } catch (error) {
-    console.error('💥 Error fetching departments:', error);
+    console.error("💥 Error fetching departments:", error);
     throw new ApiError(500, "Failed to retrieve departments");
   }
 });
@@ -2802,7 +3017,10 @@ export const getSignupRequests = asyncHandler(async (req, res) => {
   const skip = (page - 1) * parseInt(limit);
 
   const where = {};
-  if (status && ["PENDING", "APPROVED", "REJECTED"].includes(status.toUpperCase())) {
+  if (
+    status &&
+    ["PENDING", "APPROVED", "REJECTED"].includes(status.toUpperCase())
+  ) {
     where.status = status.toUpperCase();
   }
 
@@ -2816,13 +3034,88 @@ export const getSignupRequests = asyncHandler(async (req, res) => {
     prisma.signupRequest.count({ where }),
   ]);
 
-  res.status(200).json(new ApiResponse(200, {
-    totalRequests: totalCount,
-    requests,
-    pagination: {
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(totalCount / limit),
-      totalCount,
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        totalRequests: totalCount,
+        requests,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalCount / limit),
+          totalCount,
+        },
+      },
+      "Signup requests retrieved successfully",
+    ),
+  );
+});
+
+export const getAllCalls = asyncHandler(async (req, res) => {
+  try {
+    const { page = 1, limit = 100, type = "ALL" } = req.query;
+
+    console.log("📋 Admin all calls request:", { page, limit, type });
+
+    let whereClause = {};
+
+    // Filter by call type if needed
+    if (type === "AUDIO") {
+      whereClause.callType = "AUDIO";
+    } else if (type === "VIDEO") {
+      whereClause.callType = "VIDEO";
     }
-  }, "Signup requests retrieved successfully"));
+
+    const calls = await prisma.call.findMany({
+      where: whereClause,
+      include: {
+        caller: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+          },
+        },
+        receiver: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip: (page - 1) * parseInt(limit),
+      take: parseInt(limit),
+    });
+
+    const total = await prisma.call.count({
+      where: whereClause,
+    });
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          calls,
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total,
+            totalPages: Math.ceil(total / parseInt(limit)),
+          },
+        },
+        "All call records retrieved successfully"
+      )
+    );
+  } catch (error) {
+    console.error("Error fetching all call history:", error);
+    throw new ApiError(500, error.message || "Failed to fetch all call history");
+  }
 });

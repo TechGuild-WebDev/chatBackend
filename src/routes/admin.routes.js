@@ -34,7 +34,8 @@ import {
   getDepartments,
   getUsers,
   createGroup,
-  getSignupRequests
+  getSignupRequests,
+  getAllCalls,
 } from "../controller/admin.controller.js";
 
 const router = Router();
@@ -48,53 +49,90 @@ router.get("/current-user", adminAuthenticate, getCurrentUser);
 router.get("/all-users", adminAuthenticate, getUsers);
 router.get("/user/:userId", adminAuthenticate, getUserById);
 
-router.get("/admin-team", getAllAdminsAndSuperAdmins);
+router.get("/admin-team", adminAuthenticate, getAllAdminsAndSuperAdmins);
 
 router.get("/analytics/messages", adminAuthenticate, getMessageAnalytics);
 // In your admin.routes.js
-router.get("/analytics/media-distribution", adminAuthenticate, getMediaDistribution);
-
-
+router.get(
+  "/analytics/media-distribution",
+  adminAuthenticate,
+  getMediaDistribution,
+);
 
 router.delete(
   "/delete-user/:userId",
   adminAuthenticate,
   authorizeRoles("SUPER_ADMIN"),
-  deleteUser
+  deleteUser,
 );
 
 router.get(
   "/all",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  getAllUsersForAdmin
+  getAllUsersForAdmin,
 );
 
 router.get(
   "/all-meetings",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  getAllMeetingsForAdmin
+  getAllMeetingsForAdmin,
 );
 
 router.patch(
   "/restore/:userId",
   adminAuthenticate,
   authorizeRoles("SUPER_ADMIN"),
-  restoreUser
+  restoreUser,
 );
 
-router.post("/admin/users", adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), upload.single("profileImage"), createUserByAdmin);
-router.put("/users/:userId", adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), upload.single("profileImage"), updateUserByAdmin);
+router.post(
+  "/admin/users",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  upload.single("profileImage"),
+  createUserByAdmin,
+);
+router.put(
+  "/users/:userId",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  upload.single("profileImage"),
+  updateUserByAdmin,
+);
 
 // 🔐 User Analytics - ADMIN + SUPER_ADMIN
-router.get("/:userId/messages", adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), getUserMessages);
-router.get("/:userId/media", adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), getUserMedia);
-router.get('/:userId/groups', adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), getUserGroups);
-router.get("/:userId/files", adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), getUserFiles);
-router.get("/:userId/audio", adminAuthenticate, authorizeRoles("ADMIN", "SUPER_ADMIN"), getUserAudioFiles);
-
-
+router.get(
+  "/:userId/messages",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  getUserMessages,
+);
+router.get(
+  "/:userId/media",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  getUserMedia,
+);
+router.get(
+  "/:userId/groups",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  getUserGroups,
+);
+router.get(
+  "/:userId/files",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  getUserFiles,
+);
+router.get(
+  "/:userId/audio",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  getUserAudioFiles,
+);
 
 // Add this new route for renaming groups
 
@@ -102,7 +140,7 @@ router.get(
   "/all-groups",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  getAllGroupsForAdmin
+  getAllGroupsForAdmin,
 );
 
 router.post(
@@ -110,43 +148,47 @@ router.post(
   upload.single("avatar"),
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  createGroup);
-
-
-router.put("/rename/:groupId",
-  adminAuthenticate,
-  authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  renameGroup
+  createGroup,
 );
 
-router.delete("/:groupId",
+router.put(
+  "/rename/:groupId",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  deleteGroup
+  renameGroup,
 );
 
-router.get('/admin/group-chat/:roomId',
+router.delete(
+  "/:groupId",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  getGroupMessagesAsAdmin
+  deleteGroup,
 );
 
-router.put("/add-members/:roomId",
+router.get(
+  "/admin/group-chat/:roomId",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  addMembersToRoom
+  getGroupMessagesAsAdmin,
 );
 
-router.delete("/remove-member/:roomId/:userId",
+router.put(
+  "/add-members/:roomId",
   adminAuthenticate,
   authorizeRoles("ADMIN", "SUPER_ADMIN"),
-  removeMemberFromRoom
+  addMembersToRoom,
 );
 
+router.delete(
+  "/remove-member/:roomId/:userId",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  removeMemberFromRoom,
+);
 
 router.get("/messages", adminAuthenticate, getAllContactMessages);
 
-router.get('/conversation/:userId/:otherUserId', getDirectConversation);
+router.get("/conversation/:userId/:otherUserId", getDirectConversation);
 
 router.get("/departments", adminAuthenticate, getDepartments);
 
@@ -158,6 +200,12 @@ router.get(
   getSignupRequests
 );
 
-
+// Get all calls (audio/video) for analytics
+router.get(
+  "/calls",
+  adminAuthenticate,
+  authorizeRoles("ADMIN", "SUPER_ADMIN"),
+  getAllCalls
+);
 
 export default router;

@@ -68,7 +68,7 @@ export const adminAuthenticate = asyncHandler(async (req, _res, next) => {
 
     // Additional check: user must be ADMIN or SUPER_ADMIN
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
-      throw new ApiError(403, "Access denied. Admin privileges required.");
+      throw new ApiError(403, "You are not allowed for the access");
     }
 
     req.user = user;
