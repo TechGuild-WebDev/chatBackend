@@ -31,8 +31,7 @@ export async function registerToken(req, res, next) {
       where: { token },
       update: {
         userId,
-        platform,
-        lastUsed: new Date()
+        platform
       },
       create: {
         token,
@@ -95,8 +94,7 @@ export async function getUserTokens(req, res, next) {
       select: {
         token: true,
         platform: true,
-        addedAt: true,
-        lastUsed: true
+        addedAt: true
       }
     });
 

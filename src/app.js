@@ -48,6 +48,7 @@ import messageRoutes from "./routes/message.routes.js";
 
 // Services
 import { reminderService } from "./services/reminderService.js";
+import { sendChatNotification } from "./services/notificationService.js";
 import { setIoInstance, checkPendingStatusResets } from "./services/statusScheduler.js";
 import { authenticate } from "./middlewares/authenticate.js";
 import { startStaleCallCleanup } from "./cronJobs.js";
@@ -467,6 +468,26 @@ io.on("connection", (socket) => {
       await prisma.messageStatus.createMany({
         data: messageStatuses,
       });
+
+      // Send background FCM push notifications to other participants
+      try {
+        const receiverIds = allRoomMembers
+          .map((m) => m.userId)
+          .filter((id) => id !== userId);
+
+        if (receiverIds.length > 0) {
+          await sendChatNotification(receiverIds, {
+            roomId: roomId,
+            messageId: savedMessage.id,
+            senderId: userId,
+            senderName: savedMessage.sender.name || savedMessage.sender.username || "User",
+            content: content || "Sent a message",
+            type: type || "TEXT",
+          });
+        }
+      } catch (fcmError) {
+        console.error("FCM socket notification failed:", fcmError.message);
+      }
 
       // Emit the new message to the room with its initial statuses
       io.to(roomId).emit("new-message", {
@@ -1198,8 +1219,7 @@ app.post('/api/v1/fcm/token', authenticate, async (req, res) => {
       data: {
         token: token,
         userId: userId,
-        platform: platform || 'android',
-        lastUsed: new Date()
+        platform: platform || 'android'
       }
     });
 
@@ -1289,8 +1309,7 @@ app.get('/api/v1/fcm/my-tokens', authenticate, async (req, res) => {
       select: {
         token: true,
         platform: true,
-        addedAt: true,
-        lastUsed: true
+        addedAt: true
       }
     });
 
